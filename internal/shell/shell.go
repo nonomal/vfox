@@ -17,8 +17,9 @@
 package shell
 
 import (
-	"github.com/version-fox/vfox/internal/env"
 	"strings"
+
+	"github.com/version-fox/vfox/internal/env"
 )
 
 type Shell interface {
@@ -36,6 +37,8 @@ func NewShell(name string) Shell {
 		return Pwsh
 	case "fish":
 		return Fish
+	case "clink":
+		return Clink
 	}
 	return nil
 

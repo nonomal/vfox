@@ -17,7 +17,9 @@
 package internal
 
 import (
-	"fmt"
+	"errors"
+
+	lua "github.com/yuin/gopher-lua"
 )
 
 type LuaCheckSum struct {
@@ -50,7 +52,7 @@ func (c *LuaCheckSum) Checksum() *Checksum {
 }
 
 type AvailableHookCtx struct {
-	RuntimeVersion string `luai:"runtimeVersion"`
+	Args []string `luai:"args"`
 }
 
 type AvailableHookResultItem struct {
@@ -63,18 +65,18 @@ type AvailableHookResultItem struct {
 type AvailableHookResult = []*AvailableHookResultItem
 
 type PreInstallHookCtx struct {
-	Version        string `luai:"version"`
-	RuntimeVersion string `luai:"runtimeVersion"`
+	Version string `luai:"version"`
 }
 
 type PreInstallHookResultAdditionItem struct {
-	Name string `luai:"name"`
-	Url  string `luai:"url"`
-
-	Sha256 string `luai:"sha256"`
-	Sha512 string `luai:"sha512"`
-	Sha1   string `luai:"sha1"`
-	Md5    string `luai:"md5"`
+	Name    string            `luai:"name"`
+	Url     string            `luai:"url"`
+	Headers map[string]string `luai:"headers"`
+	Note    string            `luai:"note"`
+	Sha256  string            `luai:"sha256"`
+	Sha512  string            `luai:"sha512"`
+	Sha1    string            `luai:"sha1"`
+	Md5     string            `luai:"md5"`
 }
 
 func (i *PreInstallHookResultAdditionItem) Info() *Info {
@@ -89,26 +91,29 @@ func (i *PreInstallHookResultAdditionItem) Info() *Info {
 		Name:     i.Name,
 		Version:  Version(""),
 		Path:     i.Url,
-		Note:     "",
+		Headers:  i.Headers,
+		Note:     i.Note,
 		Checksum: sum.Checksum(),
 	}
 }
 
 type PreInstallHookResult struct {
-	Version string `luai:"version"`
-	Url     string `luai:"url"`
-
-	Sha256 string `luai:"sha256"`
-	Sha512 string `luai:"sha512"`
-	Sha1   string `luai:"sha1"`
-	Md5    string `luai:"md5"`
-
+	Version  string                              `luai:"version"`
+	Url      string                              `luai:"url"`
+	Headers  map[string]string                   `luai:"headers"`
+	Note     string                              `luai:"note"`
+	Sha256   string                              `luai:"sha256"`
+	Sha512   string                              `luai:"sha512"`
+	Sha1     string                              `luai:"sha1"`
+	Md5      string                              `luai:"md5"`
 	Addition []*PreInstallHookResultAdditionItem `luai:"addition"`
 }
 
+var ErrNoVersionProvided = errors.New("no version number provided")
+
 func (i *PreInstallHookResult) Info() (*Info, error) {
 	if i.Version == "" {
-		return nil, fmt.Errorf("no version number provided")
+		return nil, ErrNoVersionProvided
 	}
 
 	sum := LuaCheckSum{
@@ -122,13 +127,13 @@ func (i *PreInstallHookResult) Info() (*Info, error) {
 		Name:     "",
 		Version:  Version(i.Version),
 		Path:     i.Url,
-		Note:     "",
+		Headers:  i.Headers,
+		Note:     i.Note,
 		Checksum: sum.Checksum(),
 	}, nil
 }
 
 type PreUseHookCtx struct {
-	RuntimeVersion  string           `luai:"runtimeVersion"`
 	Cwd             string           `luai:"cwd"`
 	Scope           string           `luai:"scope"`
 	Version         string           `luai:"version"`
@@ -141,14 +146,12 @@ type PreUseHookResult struct {
 }
 
 type PostInstallHookCtx struct {
-	RuntimeVersion string           `luai:"runtimeVersion"`
-	RootPath       string           `luai:"rootPath"`
-	SdkInfo        map[string]*Info `luai:"sdkInfo"`
+	RootPath string           `luai:"rootPath"`
+	SdkInfo  map[string]*Info `luai:"sdkInfo"`
 }
 
 type EnvKeysHookCtx struct {
-	RuntimeVersion string `luai:"runtimeVersion"`
-	Main           *Info  `luai:"main"`
+	Main *Info `luai:"main"`
 	// TODO Will be deprecated in future versions
 	Path    string           `luai:"path"`
 	SdkInfo map[string]*Info `luai:"sdkInfo"`
@@ -159,11 +162,38 @@ type EnvKeysHookResultItem struct {
 	Value string `luai:"value"`
 }
 
+type ParseLegacyFileHookCtx struct {
+	Filepath             string         `luai:"filepath"`
+	Filename             string         `luai:"filename"`
+	GetInstalledVersions lua.LGFunction `luai:"getInstalledVersions"`
+}
+
+type ParseLegacyFileResult struct {
+	Version string `luai:"version"`
+}
+
+type PreUninstallHookCtx struct {
+	Main    *Info            `luai:"main"`
+	SdkInfo map[string]*Info `luai:"sdkInfo"`
+}
+
 type LuaPluginInfo struct {
-	Name              string `luai:"name"`
-	Author            string `luai:"author"`
-	Version           string `luai:"version"`
-	Description       string `luai:"description"`
-	UpdateUrl         string `luai:"updateUrl"`
-	MinRuntimeVersion string `luai:"minRuntimeVersion"`
+	Name              string   `luai:"name"`
+	Version           string   `luai:"version"`
+	Description       string   `luai:"description"`
+	UpdateUrl         string   `luai:"updateUrl"`
+	ManifestUrl       string   `luai:"manifestUrl"`
+	Homepage          string   `luai:"homepage"`
+	License           string   `luai:"license"`
+	MinRuntimeVersion string   `luai:"minRuntimeVersion"`
+	Notes             []string `luai:"notes"`
+	LegacyFilenames   []string `luai:"legacyFilenames"`
+}
+
+// LuaRuntime represents the runtime information of the Lua environment.
+type LuaRuntime struct {
+	OsType        string `luai:"osType"`
+	ArchType      string `luai:"archType"`
+	Version       string `luai:"version"`
+	PluginDirPath string `luai:"pluginDirPath"`
 }

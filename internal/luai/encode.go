@@ -56,8 +56,12 @@ func Marshal(state *lua.LState, v any) (lua.LValue, error) {
 			if err != nil {
 				return nil, err
 			}
+			if lf, ok := sub.(*lua.LFunction); ok {
+				state.SetField(table, tag, lf)
+			} else {
+				table.RawSetString(tag, sub)
+			}
 
-			table.RawSetString(tag, sub)
 		}
 		return table, nil
 	case reflect.String:
@@ -98,9 +102,26 @@ func Marshal(state *lua.LState, v any) (lua.LValue, error) {
 				return nil, err
 			}
 
-			table.RawSetString(key.String(), value)
+			switch key.Kind() {
+			case reflect.String:
+				table.RawSetString(key.String(), value)
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				table.RawSetInt(int(key.Int()), value)
+			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+				table.RawSetInt(int(key.Uint()), value)
+			default:
+				return nil, errors.New("marshal: unsupported type " + key.Kind().String() + " for key")
+			}
+
 		}
 		return table, nil
+	case reflect.Func:
+		if reflected.Type().ConvertibleTo(reflect.TypeOf(lua.LGFunction(nil))) {
+			lf := reflected.Convert(reflect.TypeOf(lua.LGFunction(nil))).Interface().(lua.LGFunction)
+			return state.NewFunction(lf), nil
+		} else {
+			return nil, errors.New("marshal: unsupported function type " + reflected.Type().String())
+		}
 	default:
 		return nil, errors.New("marshal: unsupported type " + reflected.Kind().String() + " for reflected ")
 	}

@@ -1,57 +1,5 @@
 # Core
 
-`vfox` has a few core commands that are used frequently. The following are the most frequently used commands.
-
-## Available
-
-View all available plugins. If you specify a category, it will only show the plugins in that category. If you don't
-specify a category, it will show all available plugins.
-
-**Usage**
-
-```shell
-vfox available [<category>]
-```
-
-`category`[optional]: Category, such as java, nodejs, flutter, etc. If not passed, all available plugins will be
-displayed.
-
-::: warning
-Note that the plugin name consists of two parts, `category/plugin-name`, such as `nodejs/nodejs`, `java/graalvm`
-:::
-
-## Add
-
-Add a plugin from the official repository or a custom source. In `vfox`, a plugin is an SDK, and an SDK is a plugin.
-Therefore, before using them, you need to install the corresponding plugin.
-
-**Usage**
-
-```shell
-vfox add [options] <plugin-name>
-```
-
-`plugin-name`: Plugin name, such as `nodejs/nodejs`.
-
-**Options**
-
-- `-a, --alias`: Set the plugin alias.
-- `-s, --source`: Install the plugin from the specified path (can be a remote file or a local file).
-
-**Examples**
-
-**Install plugin from the official repository**
-
-```shell
-$ vfox add --alias node nodejs/nodejs
-```
-
-**Install custom plugin**
-
-```shell
-$ vfox add --source https://raw.githubusercontent.com/version-fox/version-fox-plugins/main/nodejs/nodejs.lua custom-node
-```
-
 ## Search
 
 View for all available versions of the specified SDK.
@@ -59,13 +7,29 @@ View for all available versions of the specified SDK.
 **Usage**
 
 ```shell
-vfox search <sdk-name>
+vfox search <sdk-name> [...optionArgs]
 ```
 
 `sdk-name`: SDK name, such as `nodejs`, `custom-node`.
+`optionArgs`: Additional arguments for the search command. NOTE: Whether it is supported or not depends on the plugin.
+
+::: warning Cache
+
+`vfox` will cache the results of the `search` command to reduce the number of network requests. The default cache time is `12h`.
+
+You can disable it through the following command.
+```shell
+vfox config cache.availableHookDuration 0
+```
+For details, see [Cache Settings](../guides/configuration.md#cache-settings).
+:::
 
 ::: tip Quick install
 Select the target version, and press Enter to install quickly.
+:::
+
+::: tip
+`search` command will retrieve the plugin from the remote repository and add it locally if it is not installed locally.
 :::
 
 ## Install
@@ -83,6 +47,18 @@ vfox i <sdk-name>@<version>
 `sdk-name`: SDK name
 
 `version`: The version to install
+
+**Options**
+
+- `-a, --all`: Install all SDK versions recorded in .tool-versions
+
+::: tip
+You can install multiple SDKs at the same time by separating them with space.
+
+```shell
+vfox install nodejs@20 golang ...
+```
+:::
 
 ## Use
 
@@ -127,3 +103,54 @@ vfox un <sdk-name>@<version>
 `sdk-name`: SDK name
 
 `version`: The specific version number
+
+## List
+
+View all installed sdks.
+
+**Usage**
+
+```shell
+vfox list [<sdk-name>]
+
+vfox ls [<sdk-name>]
+```
+
+`sdk-name`: SDK name, if not passed, display all.
+
+## Current
+
+View the current version of the SDK.
+
+**Usage**
+
+```shell
+vfox current [<sdk-name>]
+vfox c
+```
+
+## Cd 
+
+Launch a shell in the `VFOX_HOME` or SDK directory.
+
+**Usage**
+
+```shell
+vfox cd [options] [<sdk-name>]
+```
+
+`sdk-name`: SDK name, if not passed, default `VFOX_HOME`.
+
+**Options**
+
+- `-p, --plugin`: Launch a shell in the plugin directory.
+
+## Upgrade <Badge type="tip" text=">= 0.4.2" vertical="middle" />
+
+Upgrade `vfox` to the latest version.
+
+**Usage**
+
+```shell
+vfox upgrade
+```

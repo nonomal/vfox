@@ -25,24 +25,21 @@ import (
 	"github.com/version-fox/vfox/internal/util"
 )
 
-type RecordSource string
-
-const (
-	GlobalRecordSource  RecordSource = "global"
-	ProjectRecordSource RecordSource = "project"
-	SessionRecordSource RecordSource = "session"
-)
-
 type PathMeta struct {
 	TempPath string
 	// Temporary directory for the current process
 	CurTmpPath       string
-	ConfigPath       string
+	HomePath         string
 	SdkCachePath     string
 	PluginPath       string
 	ExecutablePath   string
 	WorkingDirectory string
+	GlobalShimsPath  string
 }
+
+const (
+	HookCurTmpPath = "__VFOX_CURTMPPATH"
+)
 
 func newPathMeta() (*PathMeta, error) {
 	userHomeDir, err := os.UserHomeDir()
@@ -50,7 +47,7 @@ func newPathMeta() (*PathMeta, error) {
 		return nil, fmt.Errorf("get user home dir error: %w", err)
 	}
 	pluginPath := filepath.Join(userHomeDir, ".version-fox", "plugin")
-	configPath := filepath.Join(userHomeDir, ".version-fox")
+	homePath := filepath.Join(userHomeDir, ".version-fox")
 	sdkCachePath := filepath.Join(userHomeDir, ".version-fox", "cache")
 	tmpPath := filepath.Join(userHomeDir, ".version-fox", "temp")
 	_ = os.MkdirAll(sdkCachePath, 0755)
@@ -60,16 +57,22 @@ func newPathMeta() (*PathMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	pid := env.GetPid()
-	timestamp := util.GetBeginOfToday()
-	name := fmt.Sprintf("%d-%d", timestamp, pid)
-	curTmpPath := filepath.Join(tmpPath, name)
+	curTmpPath := os.Getenv(HookCurTmpPath)
+	if curTmpPath == "" {
+		pid := env.GetPid()
+		timestamp := util.GetBeginOfToday()
+		name := fmt.Sprintf("%d-%d", timestamp, pid)
+		curTmpPath = filepath.Join(tmpPath, name)
+	}
 	if !util.FileExists(curTmpPath) {
 		err = os.Mkdir(curTmpPath, 0755)
 		if err != nil {
 			return nil, fmt.Errorf("create temp dir failed: %w", err)
 		}
 	}
+
+	globalShimsPath := filepath.Join(homePath, "shims")
+	_ = os.MkdirAll(globalShimsPath, 0777)
 
 	workingDirectory, err := os.Getwd()
 	if err != nil {
@@ -79,10 +82,11 @@ func newPathMeta() (*PathMeta, error) {
 	return &PathMeta{
 		TempPath:         tmpPath,
 		CurTmpPath:       curTmpPath,
-		ConfigPath:       configPath,
+		HomePath:         homePath,
 		SdkCachePath:     sdkCachePath,
 		PluginPath:       pluginPath,
 		ExecutablePath:   exePath,
 		WorkingDirectory: workingDirectory,
+		GlobalShimsPath:  globalShimsPath,
 	}, nil
 }

@@ -19,7 +19,10 @@ package util
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
+	"fmt"
+	"github.com/bodgit/sevenzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -99,6 +102,12 @@ loop:
 		}
 	}
 	for _, s := range symlinks {
+		dir := filepath.Dir(s.newname)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+		}
 		if err = os.Symlink(s.oldname, s.newname); err != nil {
 			return err
 		}
@@ -168,6 +177,12 @@ loop:
 		}
 	}
 	for _, s := range symlinks {
+		dir := filepath.Dir(s.newname)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return err
+			}
+		}
 		if err = os.Symlink(s.oldname, s.newname); err != nil {
 			return err
 		}
@@ -205,8 +220,9 @@ func findRootFolderInZip(zipFilePath string) string {
 	var firstElement string
 
 	for _, f := range r.File {
+		normalizedPath := strings.ReplaceAll(f.Name, "\\", "/")
 
-		currentFirstElement := strings.Split(f.Name, "/")[0]
+		currentFirstElement := strings.Split(normalizedPath, "/")[0]
 
 		if firstElement != "" && firstElement != currentFirstElement {
 			return ""
@@ -219,6 +235,10 @@ func findRootFolderInZip(zipFilePath string) string {
 	return firstElement
 }
 
+func isDir(path string) bool {
+	return strings.HasSuffix(path, "/")
+}
+
 func (z *ZipDecompressor) processZipFile(f *zip.File, dest string, rootFolderInZip string) error {
 	rc, err := f.Open()
 	if err != nil {
@@ -226,8 +246,9 @@ func (z *ZipDecompressor) processZipFile(f *zip.File, dest string, rootFolderInZ
 	}
 	defer rc.Close()
 
+	normalizedPath := strings.ReplaceAll(f.Name, "\\", "/")
 	// Split the file name into a slice
-	parts := strings.Split(f.Name, "/")
+	parts := strings.Split(normalizedPath, "/")
 	if len(parts) > 1 && rootFolderInZip != "" {
 		// Remove the first element
 		parts = parts[1:]
@@ -236,11 +257,142 @@ func (z *ZipDecompressor) processZipFile(f *zip.File, dest string, rootFolderInZ
 	fname := strings.Join(parts, "/")
 
 	fpath := filepath.Join(dest, fname)
-	if f.FileInfo().IsDir() {
+	if f.FileInfo().IsDir() || isDir(fname) {
 		err := os.MkdirAll(fpath, os.ModePerm)
 		if err != nil {
 			return err
 		}
+	} else if isSymlink(f.FileInfo()) {
+		// symlink target is the contents of the file
+		buf := new(bytes.Buffer)
+		_, err := io.Copy(buf, rc)
+		if err != nil {
+			return fmt.Errorf("%s: reading symlink target: %v", f.FileHeader.Name, err)
+		}
+		return writeNewSymbolicLink(fpath, strings.TrimSpace(buf.String()))
+	} else {
+		err = os.MkdirAll(filepath.Dir(fpath), os.ModePerm)
+		if err != nil {
+			return err
+		}
+		f, err := os.OpenFile(
+			fpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		_, err = io.Copy(f, rc)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isSymlink(fi os.FileInfo) bool {
+	return fi.Mode()&os.ModeSymlink != 0
+}
+
+func writeNewSymbolicLink(fpath string, target string) error {
+	err := os.MkdirAll(filepath.Dir(fpath), 0755)
+	if err != nil {
+		return fmt.Errorf("%s: making directory for file: %v", fpath, err)
+	}
+
+	_, err = os.Lstat(fpath)
+	if err == nil {
+		err = os.Remove(fpath)
+		if err != nil {
+			return fmt.Errorf("%s: failed to unlink: %+v", fpath, err)
+		}
+	}
+
+	err = os.Symlink(target, fpath)
+	if err != nil {
+		return fmt.Errorf("%s: making symbolic link for: %v", fpath, err)
+	}
+	return nil
+}
+
+type SevenZipDecompressor struct {
+	src string
+}
+
+func findRootFolderIn7Zip(zipFilePath string) string {
+	r, err := sevenzip.OpenReader(zipFilePath)
+	if err != nil {
+		return ""
+	}
+	defer r.Close()
+
+	var firstElement string
+
+	for _, f := range r.File {
+
+		normalizedPath := strings.ReplaceAll(f.Name, "\\", "/")
+
+		currentFirstElement := strings.Split(normalizedPath, "/")[0]
+
+		if firstElement != "" && firstElement != currentFirstElement {
+			return ""
+		}
+
+		if firstElement == "" {
+			firstElement = currentFirstElement
+		}
+	}
+	return firstElement
+}
+
+func (s *SevenZipDecompressor) Decompress(dest string) error {
+	rootFolderInZip := findRootFolderIn7Zip(s.src)
+	r, err := sevenzip.OpenReader(s.src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	for _, f := range r.File {
+		if err = s.extractFile(f, dest, rootFolderInZip); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *SevenZipDecompressor) extractFile(f *sevenzip.File, dest string, rootFolderInZip string) error {
+	rc, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	normalizedPath := strings.ReplaceAll(f.Name, "\\", "/")
+	// Split the file name into a slice
+	parts := strings.Split(normalizedPath, "/")
+	if len(parts) > 1 && rootFolderInZip != "" {
+		// Remove the first element
+		parts = parts[1:]
+	}
+	// Join the remaining elements to get the new file name
+	fname := strings.Join(parts, "/")
+
+	fpath := filepath.Join(dest, fname)
+	if f.FileInfo().IsDir() || isDir(fname) {
+		err := os.MkdirAll(fpath, os.ModePerm)
+		if err != nil {
+			return err
+		}
+	} else if isSymlink(f.FileInfo()) {
+		// symlink target is the contents of the file
+		buf := new(bytes.Buffer)
+		_, err := io.Copy(buf, rc)
+		if err != nil {
+			return fmt.Errorf("%s: reading symlink target: %v", f.FileHeader.Name, err)
+		}
+		return writeNewSymbolicLink(fpath, strings.TrimSpace(buf.String()))
 	} else {
 		var fdir string
 		if lastIndex := strings.LastIndex(fpath, string(os.PathSeparator)); lastIndex > -1 {
@@ -280,6 +432,11 @@ func NewDecompressor(src string) Decompressor {
 	}
 	if strings.HasSuffix(filename, ".zip") {
 		return &ZipDecompressor{
+			src: src,
+		}
+	}
+	if strings.HasSuffix(filename, ".7z") {
+		return &SevenZipDecompressor{
 			src: src,
 		}
 	}

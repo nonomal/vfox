@@ -39,7 +39,7 @@ function nav(): DefaultTheme.NavItem[] {
         {text: 'Home', link: '/'},
         {text: 'Documentation', link: '/guides/intro'},
         {text: 'FAQ', link: '/guides/faq'},
-        {text: 'Plugins', link: 'https://github.com/version-fox/version-fox-plugins'}
+        {text: 'Available Plugins', link: '/plugins/available'},
     ]
 }
 
@@ -58,6 +58,8 @@ function sidebar(): DefaultTheme.Sidebar {
             text: 'Usage',
             items: [
                 {text: 'Core', link: '/usage/core-commands'},
+                {text: 'Plugins', link: '/usage/plugins-commands'},
+                {text: 'Shims & PATH', link: '/usage/shims-path'},
                 {text: 'All Commands', link: '/usage/all-commands'},
             ]
         },
@@ -68,7 +70,8 @@ function sidebar(): DefaultTheme.Sidebar {
                     text: 'Authors',
                     items:[
                         {text: 'Create a Plugin', link: '/plugins/create/howto'},
-                        {text: 'Plugin Template', link: 'https://github.com/version-fox/vfox/blob/main/template.lua'},
+                        {text: 'How to publish a plugin?', link: '/plugins/create/howto_registry'},
+                        {text: 'Plugin Template', link: 'https://github.com/version-fox/vfox-plugin-template'},
                     ]
                 },
                 {
@@ -77,10 +80,12 @@ function sidebar(): DefaultTheme.Sidebar {
                         {text: 'http', link: '/plugins/library/http'},
                         {text: 'html', link: '/plugins/library/html'},
                         {text: 'json', link: '/plugins/library/json'},
+                        {text: 'strings', link: '/plugins/library/strings'},
+                        {text: 'archiver', link: '/plugins/library/archiver'},
                     ]
                 },
 
-                {text: 'Available Plugins', link: 'https://github.com/version-fox/version-fox-plugins'},
+                {text: 'Available Plugins', link: '/plugins/available'},
             ]
         },
         {

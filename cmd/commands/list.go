@@ -18,6 +18,7 @@ package commands
 
 import (
 	"fmt"
+
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
 	"github.com/urfave/cli/v2"
@@ -25,10 +26,11 @@ import (
 )
 
 var List = &cli.Command{
-	Name:    "list",
-	Aliases: []string{"ls"},
-	Usage:   "list all versions of the target sdk",
-	Action:  listCmd,
+	Name:     "list",
+	Aliases:  []string{"ls"},
+	Usage:    "List all versions of the target SDK",
+	Action:   listCmd,
+	Category: CategorySDK,
 }
 
 func listCmd(ctx *cli.Context) error {
@@ -44,7 +46,9 @@ func listCmd(ctx *cli.Context) error {
 			return fmt.Errorf("you don't have any sdk installed yet")
 		}
 		tree := pterm.LeveledList{}
-		for name, s := range allSdk {
+
+		for _, s := range allSdk {
+			name := s.Plugin.SdkName
 			tree = append(tree, pterm.LeveledListItem{Level: 0, Text: name})
 			for _, version := range s.List() {
 				tree = append(tree, pterm.LeveledListItem{Level: 1, Text: "v" + string(version)})

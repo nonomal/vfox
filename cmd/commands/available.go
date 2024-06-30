@@ -17,50 +17,44 @@
 package commands
 
 import (
+	"strings"
+
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v2"
 	"github.com/version-fox/vfox/internal"
 )
 
 var Available = &cli.Command{
-	Name:   "available",
-	Usage:  "show available plugins",
-	Action: availableCmd,
+	Name:     "available",
+	Usage:    "Show all available plugins",
+	Action:   availableCmd,
+	Category: CategoryPlugin,
 }
 
 func availableCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManagerWithSource()
+	manager := internal.NewSdkManager()
 	defer manager.Close()
-	categoryName := ctx.Args().First()
-	categories, err := manager.Available()
+	//categoryName := ctx.Args().First()
+	available, err := manager.Available()
 	if err != nil {
 		return err
 	}
 	data := pterm.TableData{
-		{"NAME", "VERSION", "AUTHOR", "DESCRIPTION"},
+		{"NAME", "OFFICIAL", "HOMEPAGE", "DESCRIPTION"},
 	}
-	for _, category := range categories {
-		if len(categoryName) > 0 {
-			if categoryName != category.Name {
-				continue
-			}
+	for _, item := range available {
+		official := pterm.LightRed("NO")
+		if strings.HasPrefix(item.Homepage, "https://github.com/version-fox/") {
+			official = pterm.LightGreen("YES")
 		}
-		for _, p := range category.Plugins {
-			desc := p.Desc
-			if len(desc) == 0 {
-				desc = "-"
-			} else if len(desc) > 100 {
-				desc = desc[:100] + "..."
-			}
-			data = append(data, []string{category.Name + "/" + p.Filename, p.Version, p.Author, desc})
-		}
+		data = append(data, []string{item.Name, official, item.Homepage, item.Desc})
 	}
 
 	_ = pterm.DefaultTable.
 		WithHasHeader().
 		WithSeparator("\t ").
 		WithData(data).Render()
-	pterm.Printf("Please use %s to install plugin\n", pterm.LightBlue("vfox add <plugin name>"))
+	pterm.Printf("Please use %s to install plugins\n", pterm.LightBlue("vfox add <plugin name>"))
 	return nil
 
 }

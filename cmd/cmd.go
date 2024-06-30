@@ -91,10 +91,13 @@ func newCmd() *cmd {
 		commands.Available,
 		commands.Search,
 		commands.Update,
+		commands.Upgrade,
 		commands.Remove,
 		commands.Add,
 		commands.Activate,
 		commands.Env,
+		commands.Config,
+		commands.Cd,
 	}
 
 	return &cmd{app: app, version: version}

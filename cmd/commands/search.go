@@ -18,33 +18,32 @@ package commands
 
 import (
 	"fmt"
-	"github.com/urfave/cli/v2"
-	"github.com/version-fox/vfox/internal"
-	"github.com/version-fox/vfox/internal/printer"
-	"golang.org/x/crypto/ssh/terminal"
 	"math"
 	"os"
 	"strings"
+
+	"github.com/urfave/cli/v2"
+	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/printer"
+	"github.com/version-fox/vfox/internal/util"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var Search = &cli.Command{
-	Name:   "search",
-	Usage:  "search a version of sdk",
-	Action: searchCmd,
+	Name:     "search",
+	Usage:    "Search a version of the target SDK",
+	Action:   searchCmd,
+	Category: CategorySDK,
 }
 
-func searchCmd(ctx *cli.Context) error {
-	sdkName := ctx.Args().First()
-	if sdkName == "" {
-		return cli.Exit("sdk name is required", 1)
-	}
+func RunSearch(sdkName string, availableArgs []string) error {
 	manager := internal.NewSdkManager()
 	defer manager.Close()
-	source, err := manager.LookupSdk(sdkName)
+	source, err := manager.LookupSdkWithInstall(sdkName)
 	if err != nil {
 		return fmt.Errorf("%s not supported, error: %w", sdkName, err)
 	}
-	result, err := source.Available()
+	result, err := source.Available(availableArgs)
 	if err != nil {
 		return fmt.Errorf("plugin [Available] method error: %w", err)
 	}
@@ -73,12 +72,19 @@ func searchCmd(ctx *cli.Context) error {
 		})
 	}
 
+	installedVersions := util.NewSet[string]()
+	for _, version := range source.List() {
+		installedVersions.Add(string(version))
+	}
+
 	_, height, _ := terminal.GetSize(int(os.Stdout.Fd()))
 	kvSelect := printer.PageKVSelect{
-		TopText: "Please select a version of " + sdkName,
-		Filter:  true,
-		Size:    int(math.Min(math.Max(float64(height-3), 1), 20)),
-		Options: options,
+		TopText:          "Please select a version of " + sdkName + " to install",
+		Filter:           true,
+		Size:             int(math.Min(math.Max(float64(height-3), 1), 20)),
+		HighlightOptions: installedVersions,
+		DisabledOptions:  installedVersions,
+		Options:          options,
 		SourceFunc: func(page, size int, options []*printer.KV) ([]*printer.KV, error) {
 			start := page * size
 			end := start + size
@@ -101,4 +107,12 @@ func searchCmd(ctx *cli.Context) error {
 		return nil
 	}
 	return source.Install(internal.Version(version.Key))
+}
+
+func searchCmd(ctx *cli.Context) error {
+	sdkName := ctx.Args().First()
+	if sdkName == "" {
+		return cli.Exit("sdk name is required", 1)
+	}
+	return RunSearch(sdkName, ctx.Args().Tail())
 }

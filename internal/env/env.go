@@ -25,18 +25,15 @@ type Manager interface {
 	Load(envs *Envs) error
 	Get(key string) (string, bool)
 	Remove(envs *Envs) error
-	Paths(paths []string) string
 	io.Closer
 }
 
 // Vars is a map of environment variables
 type Vars map[string]*string
 
-// Paths is a slice of PATH.
-type Paths []string
-
 // Envs is a struct that contains environment variables and PATH.
 type Envs struct {
 	Variables Vars
-	Paths     Paths
+	BinPaths  *Paths
+	Paths     *Paths
 }

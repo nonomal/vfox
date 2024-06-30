@@ -14,20 +14,14 @@
  *    limitations under the License.
  */
 
-package internal
+package config
 
-type RemotePluginInfo struct {
-	Filename string `json:"name"`
-	Author   string `json:"plugin_author"`
-	Desc     string `json:"plugin_desc"`
-	Name     string `json:"plugin_name"`
-	Version  string `json:"plugin_version"`
-	Sha256   string `json:"sha256"`
-	Url      string `json:"url"`
+// LegacyVersionFile represents whether to enable the ability to parse legacy version files,
+// Disable by default.
+type LegacyVersionFile struct {
+	Enable bool `yaml:"enable"`
 }
 
-type Category struct {
-	Name    string              `json:"category"`
-	Count   string              `json:"count"`
-	Plugins []*RemotePluginInfo `json:"files"`
+var EmptyLegacyVersionFile = &LegacyVersionFile{
+	Enable: false,
 }

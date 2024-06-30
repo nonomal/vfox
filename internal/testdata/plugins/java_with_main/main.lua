@@ -5,9 +5,14 @@ local html = require("html")
 
 --- The following two parameters are injected by VersionFox at runtime
 --- Operating system type at runtime (Windows, Linux, Darwin)
-OS_TYPE = ""
---- Operating system architecture at runtime (amd64, arm64, etc.)
-ARCH_TYPE = ""
+RUNTIME = {
+    --- Operating system type at runtime (Windows, Linux, Darwin)
+    osType = "",
+    --- Operating system architecture at runtime (amd64, arm64, etc.)
+    archType = "",
+    --- vfox runtime version
+    version = "",
+}
 
 PLUGIN = {
     --- Plugin name
@@ -22,6 +27,10 @@ PLUGIN = {
     updateUrl = "{URL}/sdk.lua",
     -- minimum compatible vfox version
     minRuntimeVersion = "0.2.2",
+    legacyFilenames = {
+        ".node-version",
+        ".nvmrc"
+    }
 }
 
 --- Returns some pre-installed information, such as version number, download address, local files, etc.
@@ -30,11 +39,11 @@ PLUGIN = {
 --- @field ctx.version string User-input version
 --- @return table Version information
 function PLUGIN:PreInstall(ctx)
+    print(json.encode(RUNTIME))
     local version = ctx.version
-    local runtimeVersion = ctx.runtimeVersion
     return {
         --- Version number
-        version = "xxx",
+        version = "version",
         --- remote URL or local file path [optional]
         url = "xxx",
         --- SHA256 checksum [optional]
@@ -71,7 +80,6 @@ end
 function PLUGIN:PostInstall(ctx)
     --- ctx.rootPath SDK installation directory
     local rootPath = ctx.rootPath
-    local runtimeVersion = ctx.runtimeVersion
     local sdkInfo = ctx.sdkInfo['sdk-name']
     local path = sdkInfo.path
     local version = sdkInfo.version
@@ -82,11 +90,10 @@ end
 --- @param ctx table Empty table used as context, for future extension
 --- @return table Descriptions of available versions and accompanying tool descriptions
 function PLUGIN:Available(ctx)
-    local runtimeVersion = ctx.runtimeVersion
     return {
         {
             version = "xxxx",
-            note = "LTS",
+            note = os.time(),
             addition = {
                 {
                     name = "npm",
@@ -105,11 +112,6 @@ end
 function PLUGIN:EnvKeys(ctx)
     --- this variable is same as ctx.sdkInfo['plugin-name'].path
     local mainPath = ctx.path
-    local runtimeVersion = ctx.runtimeVersion
-    local mainSdkInfo = ctx.main
-    local mpath = mainSdkInfo.path
-    local mversion = mainSdkInfo.version
-    local mname = mainSdkInfo.name
     local sdkInfo = ctx.sdkInfo['sdk-name']
     local path = sdkInfo.path
     local version = sdkInfo.version
@@ -126,37 +128,75 @@ function PLUGIN:EnvKeys(ctx)
         {
             key = "PATH",
             value = mainPath .. "/bin2"
-        },
-
+        }
     }
-
 end
 
 --- When user invoke `use` command, this function will be called to get the
 --- valid version information.
 --- @param ctx table Context information
 function PLUGIN:PreUse(ctx)
-    local runtimeVersion = ctx.runtimeVersion
     --- user input version
     local version = ctx.version
-    --- user current used version
-    local previousVersion = ctx.previousVersion
-
     --- installed sdks
-    local sdkInfo = ctx.installedSdks['version']
+    local sdkInfo = ctx.installedSdks['xxxx']
     local path = sdkInfo.path
     local name = sdkInfo.name
-    local version = sdkInfo.version
+    local sdkVersion = sdkInfo.version
 
     --- working directory
     local cwd = ctx.cwd
 
+    printTable(ctx)
+
     --- user input scope
-    --- could be one of global/project/session
     local scope = ctx.scope
 
-    --- return the version information
+    if (scope == "global") then
+        print("return 9.9.9")
+        return {
+            version = "9.9.9",
+        }
+    end
+
+    if (scope == "project") then
+        print("return 10.0.0")
+        return {
+            version = "10.0.0",
+        }
+    end
+
+    print("return 1.0.0")
+
     return {
-        version = version,
+        version = "1.0.0"
     }
+end
+
+function PLUGIN:ParseLegacyFile(ctx)
+    printTable(ctx)
+    local filename = ctx.filename
+    local filepath = ctx.filepath
+    if filename == ".node-version" then
+        return {
+            version = "14.17.0"
+        }
+    else
+        return {
+            version = "0.0.1"
+        }
+    end
+
+end
+
+function PLUGIN:PreUninstall(ctx)
+    printTable(ctx)
+    local mainSdkInfo = ctx.main
+    local mpath = mainSdkInfo.path
+    local mversion = mainSdkInfo.version
+    local mname = mainSdkInfo.name
+    local sdkInfo = ctx.sdkInfo['sdk-name']
+    local path = sdkInfo.path
+    local version = sdkInfo.version
+    local name = sdkInfo.name
 end

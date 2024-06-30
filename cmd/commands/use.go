@@ -30,25 +30,26 @@ import (
 var Use = &cli.Command{
 	Name:    "use",
 	Aliases: []string{"u"},
-	Usage:   "use a version of sdk",
+	Usage:   "Use a version of the target SDK",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "global",
 			Aliases: []string{"g"},
-			Usage:   "used with the global environment",
+			Usage:   "Used with the global environment",
 		},
 		&cli.BoolFlag{
 			Name:    "project",
 			Aliases: []string{"p"},
-			Usage:   "used with the current directory",
+			Usage:   "Used with the current directory",
 		},
 		&cli.BoolFlag{
 			Name:    "session",
 			Aliases: []string{"s"},
-			Usage:   "used with the current shell session",
+			Usage:   "Used with the current shell session",
 		},
 	},
-	Action: useCmd,
+	Action:   useCmd,
+	Category: CategorySDK,
 }
 
 func useCmd(ctx *cli.Context) error {
@@ -69,19 +70,15 @@ func useCmd(ctx *cli.Context) error {
 		version = internal.Version(argArr[1])
 	}
 
-	var recordSources []internal.RecordSource
 	scope := internal.Session
 	if ctx.IsSet("global") {
 		scope = internal.Global
-		recordSources = append(recordSources, internal.SessionRecordSource, internal.GlobalRecordSource)
 	} else if ctx.IsSet("project") {
 		scope = internal.Project
-		recordSources = append(recordSources, internal.ProjectRecordSource)
 	} else {
 		scope = internal.Session
-		recordSources = append(recordSources, internal.SessionRecordSource)
 	}
-	manager := internal.NewSdkManagerWithSource(recordSources...)
+	manager := internal.NewSdkManager()
 	defer manager.Close()
 
 	source, err := manager.LookupSdk(name)

@@ -18,6 +18,7 @@ package commands
 
 import (
 	"fmt"
+
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v2"
 	"github.com/version-fox/vfox/internal"
@@ -26,13 +27,14 @@ import (
 var Current = &cli.Command{
 	Name:      "current",
 	Aliases:   []string{"c"},
-	Usage:     "show current version of the targeted sdk",
-	UsageText: "show current version of all SDK's if no parameters are passed",
+	Usage:     "Show current version of the target SDK",
+	UsageText: "Show current version of all SDK's if no parameters are passed",
 	Action:    currentCmd,
+	Category:  CategorySDK,
 }
 
 func currentCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManager(internal.GlobalRecordSource, internal.SessionRecordSource, internal.ProjectRecordSource)
+	manager := internal.NewSdkManager()
 	defer manager.Close()
 	sdkName := ctx.Args().First()
 	if sdkName == "" {
@@ -40,7 +42,9 @@ func currentCmd(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		for name, s := range allSdk {
+
+		for _, s := range allSdk {
+			name := s.Plugin.SdkName
 			current := s.Current()
 			if current == "" {
 				pterm.Printf("%s -> N/A \n", name)
@@ -48,6 +52,7 @@ func currentCmd(ctx *cli.Context) error {
 				pterm.Printf("%s -> %s\n", name, pterm.LightGreen("v"+string(current)))
 			}
 		}
+
 		return nil
 	}
 	source, err := manager.LookupSdk(sdkName)

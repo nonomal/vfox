@@ -24,27 +24,34 @@ import (
 )
 
 type Config struct {
-	Proxy   *Proxy   `yaml:"proxy"`
-	Storage *Storage `yaml:"storage"`
+	Proxy             *Proxy             `yaml:"proxy"`
+	Storage           *Storage           `yaml:"storage"`
+	Registry          *Registry          `yaml:"registry"`
+	LegacyVersionFile *LegacyVersionFile `yaml:"legacyVersionFile"`
+	Cache             *Cache             `yaml:"cache"`
 }
 
 const filename = "config.yaml"
 
 var (
-	defaultConfig = &Config{
-		Proxy:   EmptyProxy,
-		Storage: EmptyStorage,
+	DefaultConfig = &Config{
+		Proxy:             EmptyProxy,
+		Storage:           EmptyStorage,
+		Registry:          EmptyRegistry,
+		LegacyVersionFile: EmptyLegacyVersionFile,
+		Cache:             EmptyCache,
 	}
 )
 
 func NewConfigWithPath(p string) (*Config, error) {
 	if !util.FileExists(p) {
-		content, err := yaml.Marshal(defaultConfig)
+		content, err := yaml.Marshal(DefaultConfig)
 		if err == nil {
-			_ = os.WriteFile(p, content, 0644)
-			return defaultConfig, nil
+			_ = os.WriteFile(p, content, 0666)
+			return DefaultConfig, nil
 		}
 	}
+	_ = util.ChangeModeIfNot(p, 0666)
 	content, err := os.ReadFile(p)
 	if err != nil {
 		return nil, err
@@ -60,6 +67,15 @@ func NewConfigWithPath(p string) (*Config, error) {
 	if config.Storage == nil {
 		config.Storage = EmptyStorage
 	}
+	if config.Registry == nil {
+		config.Registry = EmptyRegistry
+	}
+	if config.LegacyVersionFile == nil {
+		config.LegacyVersionFile = EmptyLegacyVersionFile
+	}
+	if config.Cache == nil {
+		config.Cache = EmptyCache
+	}
 	return config, nil
 
 }
@@ -67,4 +83,13 @@ func NewConfigWithPath(p string) (*Config, error) {
 func NewConfig(path string) (*Config, error) {
 	p := filepath.Join(path, filename)
 	return NewConfigWithPath(p)
+}
+
+func (c *Config) SaveConfig(path string) error {
+	p := filepath.Join(path, filename)
+	content, err := yaml.Marshal(c)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, content, os.ModePerm)
 }

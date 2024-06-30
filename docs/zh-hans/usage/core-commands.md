@@ -1,73 +1,42 @@
 # 核心命令
 
-核心`vfox`命令很少， 下面列举的是最频繁使用的命令。
-
-## Available
-
-列举[插件仓库](https://github.com/version-fox/version-fox-plugins)中所有可用的插件。
-
-**用法**
-```shell
-vfox available [<category>]
-```
-
-`category`[可选]: 分类， 如java、nodejs、flutter等， 如果不传则展示所有可用插件。
-
-::: warning 
-注意插件名由两部分组成，`分类/插件名`, 例如`nodejs/nodejs`、`java/graalvm`
-:::
-
-## Add
-
-在 `vfox` 中，插件就是 SDK，而 SDK 就是插件。因此，在使用它们之前，您需要安装相应的插件。
-
-
-**用法**
-
-```shell
-vfox add [options] <plugin-name>
-```
-
-`plugin-name`: 插件名称， 如`nodejs/nodejs`。
-
-**选项**
-- `-a, --alias`: 设置插件别名。
-- `-s, --source`: 安装指定路径下的插件（可以是远程文件也可以是本地文件）
-
-
-**例子**
-
-**安装仓库插件**
-```shell
-$ vfox add --alias node nodejs/nodejs
-```
-
-**安装自定义插件**
-```shell
-$ vfox add --source https://raw.githubusercontent.com/version-fox/version-fox-plugins/main/nodejs/nodejs.lua custom-node
-```
-
-
 ## Search
 
-获取当前SDK所有可用的运行时版本。
-
+获取指定 SDK 所有可用的运行时版本。
 
 **用法**
 
 ```shell
-vfox search <sdk-name>
+vfox search <sdk-name> [...optionArgs]
 ```
 
 `sdk-name`: 运行时名称， 如`nodejs`、`custom-node`。
+`optionArgs`: 搜索命令的附加参数。注意：是否支持取决于插件。
+
+::: warning 缓存
+
+`vfox`会缓存`search`的结果, 默认缓存时间为`12h`。
+
+如果你想禁用，可以通过`vfox config`命令进行配置。
+```shell
+vfox config cache.availableHookDuration 0
+```
+
+其余操作, 请查看[配置#缓存](../guides/configuration.md#%E7%BC%93%E5%AD%98)。
+
+:::
 
 ::: tip 快捷安装
 选择目标版本， 回车即可快速安装。
 :::
 
+::: tip 自动安装
+如果本地没有安装 SDK，`search`命令会从远端仓库检索插件并安装到本地。
+:::
+
 ## Install
 
-将指定的 SDK 版本安装到您​​的计算机并缓存以供将来使用。
+将指定的 SDK 版本安装到您的计算机并缓存以供将来使用。
 
 **用法**
 
@@ -77,16 +46,25 @@ vfox install <sdk-name>@<version>
 vfox i <sdk-name>@<version>
 ```
 
-
-`sdk-name`: SDK名称
+`sdk-name`: SDK 名称
 
 `version`: 需要安装的版本号
 
+**选项**
+
+- `-a, --all`: 安装 .tool-versions 中记录的所有 SDK 版本
+
+::: tip 自动安装
+你可以一次性安装多个 SDK，通过空格分隔。
+
+```shell
+vfox install nodejs@20 golang ...
+```
+:::
 
 ## Use
 
 设置运行时版本
-
 
 **用法**
 
@@ -96,15 +74,15 @@ vfox use [options] <sdk-name>[@<version>]
 vfox u [options] <sdk-name>[@<version>]
 ```
 
-`sdk-name`: SDK名称
+`sdk-name`: SDK 名称
 
-`version`[可选]: 使用 指定版本运行时。如不传， 则下拉选择。 
+`version`[可选]: 使用 指定版本运行时。如不传， 则下拉选择。
 
 **选项**
+
 - `-g, --global`: 全局生效
 - `-p, --project`: 当前目录下生效
-- `-s, --session`: 当前Shell会话内生效
-
+- `-s, --session`: 当前 Shell 会话内生效
 
 ::: tip 默认作用域
 `Windows`: 默认`Global`作用域
@@ -113,11 +91,9 @@ vfox u [options] <sdk-name>[@<version>]
 
 :::
 
-
 ## Uninstall
 
-卸载指定版本的SDK。
-
+卸载指定版本的 SDK。
 
 **用法**
 
@@ -126,6 +102,58 @@ vfox uninstall <sdk-name>@<version>
 vfox un <sdk-name>@<version>
 ```
 
-`sdk-name`: SDK名
+`sdk-name`: SDK 名
 
 `version`: 具体版本号
+
+## List
+
+查看当前已安装的所有 SDK 版本。
+
+**用法**
+
+```shell
+vfox list [<sdk-name>]
+
+vfox ls[<sdk-name>]
+```
+
+`sdk-name`: SDK 名称， 不传展示所有。
+
+## Current
+
+查看当前 SDK 的版本。
+
+**用法**
+
+```shell
+vfox current [<sdk-name>]
+vfox c
+```
+
+## Cd 
+
+在 `VFOX_HOME` 或 SDK 目录下启动 shell。
+
+**用法**
+
+```shell
+vfox cd [options] [<sdk-name>]
+```
+
+`sdk-name`: SDK 名称, 不传默认为 `VFOX_HOME`。
+
+**选项**
+
+- `-p, --plugin`: 在插件目录下启动 shell。
+
+
+## Upgrade <Badge type="tip" text=">= 0.4.2" vertical="middle" />
+
+升级 `vfox` 到最新版本。
+
+**用法**
+
+```shell
+vfox upgrade
+```

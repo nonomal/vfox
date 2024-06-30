@@ -14,11 +14,19 @@
  *    limitations under the License.
  */
 
-package env
+package util
 
-type Scope int
+import "runtime"
 
-const (
-	Global Scope = iota
-	Local
+type (
+	OSType   string
+	ArchType string
 )
+
+func GetOSType() OSType {
+	return OSType(runtime.GOOS)
+}
+
+func GetArchType() ArchType {
+	return ArchType(runtime.GOARCH)
+}

@@ -14,24 +14,18 @@
  *    limitations under the License.
  */
 
-package util
+package shim
 
-import "runtime"
+// Shim is a struct that contains the binary path and output path which is used to generate the shim.
+type Shim struct {
+	BinaryPath string
+	OutputPath string
+}
 
-type ArchType string
-
-const (
-	AMD64 ArchType = "amd64"
-	ARM64 ArchType = "arm64"
-)
-
-func GetArchType() ArchType {
-	switch runtime.GOARCH {
-	case "amd64":
-		return AMD64
-	case "arm64":
-		return ARM64
-	default:
-		return ArchType(runtime.GOARCH)
+// NewShim creates a new Shim instance.
+func NewShim(binaryPath, outputPath string) *Shim {
+	return &Shim{
+		BinaryPath: binaryPath,
+		OutputPath: outputPath,
 	}
 }

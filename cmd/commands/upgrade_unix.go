@@ -1,3 +1,5 @@
+//go:build !windows
+
 /*
  *    Copyright 2024 Han Li and contributors
  *
@@ -14,27 +16,8 @@
  *    limitations under the License.
  */
 
-package util
+package commands
 
-import "runtime"
-
-type OSType string
-
-const (
-	MacOS   OSType = "darwin"
-	Windows OSType = "windows"
-	Linux   OSType = "linux"
-)
-
-func GetOSType() OSType {
-	switch runtime.GOOS {
-	case "darwin":
-		return MacOS
-	case "windows":
-		return Windows
-	case "linux":
-		return Linux
-	default:
-		return OSType(runtime.GOOS)
-	}
+func RequestPermission() error {
+	return nil
 }

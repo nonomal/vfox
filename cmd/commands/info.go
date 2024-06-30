@@ -18,15 +18,17 @@ package commands
 
 import (
 	"fmt"
+
 	"github.com/pterm/pterm"
 	"github.com/urfave/cli/v2"
 	"github.com/version-fox/vfox/internal"
 )
 
 var Info = &cli.Command{
-	Name:   "info",
-	Usage:  "show sdk info",
-	Action: infoCmd,
+	Name:     "info",
+	Usage:    "Show plugin info",
+	Action:   infoCmd,
+	Category: CategoryPlugin,
 }
 
 func infoCmd(ctx *cli.Context) error {
@@ -42,11 +44,17 @@ func infoCmd(ctx *cli.Context) error {
 	}
 	source := s.Plugin
 
-	pterm.Println("Plugin info:")
-	pterm.Println("Name     ", "->", pterm.LightBlue(source.Name))
-	pterm.Println("Author   ", "->", pterm.LightBlue(source.Author))
-	pterm.Println("Version  ", "->", pterm.LightBlue(source.Version))
-	pterm.Println("Desc     ", "->", pterm.LightBlue(source.Description))
-	pterm.Println("UpdateUrl", "->", pterm.LightBlue(source.UpdateUrl))
+	pterm.Println("Plugin Info:")
+	pterm.Println("Name    ", "->", pterm.LightBlue(source.Name))
+	pterm.Println("Version ", "->", pterm.LightBlue(source.Version))
+	pterm.Println("Homepage", "->", pterm.LightBlue(source.Homepage))
+	pterm.Println("Desc    ", "->")
+	pterm.Println(pterm.LightBlue(source.Description))
+	if len(source.LegacyFilenames) == 0 {
+		pterm.Println("Legacy Files ->", pterm.LightRed("None"))
+	} else {
+		pterm.Println("Legacy Files ->", pterm.LightBlue(source.LegacyFilenames))
+	}
+	source.ShowNotes()
 	return nil
 }

@@ -22,6 +22,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/version-fox/vfox/internal/toolset"
+
 	"github.com/version-fox/vfox/internal"
 
 	"github.com/urfave/cli/v2"
@@ -30,9 +32,10 @@ import (
 )
 
 var Activate = &cli.Command{
-	Name:   "activate",
-	Hidden: true,
-	Action: activateCmd,
+	Name:     "activate",
+	Hidden:   true,
+	Action:   activateCmd,
+	Category: CategorySDK,
 }
 
 func activateCmd(ctx *cli.Context) error {
@@ -40,27 +43,46 @@ func activateCmd(ctx *cli.Context) error {
 	if name == "" {
 		return cli.Exit("shell name is required", 1)
 	}
-	manager := internal.NewSdkManager(internal.GlobalRecordSource, internal.ProjectRecordSource)
-	defer manager.Record.Save()
+	manager := internal.NewSdkManager()
 	defer manager.Close()
-	envKeys, err := manager.EnvKeys()
+
+	workToolVersion, err := toolset.NewToolVersion(manager.PathMeta.WorkingDirectory)
 	if err != nil {
 		return err
 	}
+
+	if err = manager.ParseLegacyFile(func(sdkname, version string) {
+		if _, ok := workToolVersion.Record[sdkname]; !ok {
+			workToolVersion.Record[sdkname] = version
+		}
+	}); err != nil {
+		return err
+	}
+	homeToolVersion, err := toolset.NewToolVersion(manager.PathMeta.HomePath)
+	if err != nil {
+		return err
+	}
+	sdkEnvs, err := manager.EnvKeys(toolset.MultiToolVersions{
+		workToolVersion,
+		homeToolVersion,
+	}, internal.ShellLocation)
+	if err != nil {
+		return err
+	}
+
+	envKeys := sdkEnvs.ToEnvs()
+
 	exportEnvs := make(env.Vars)
 	for k, v := range envKeys.Variables {
 		exportEnvs[k] = v
 	}
 
-	os.Setenv(env.HookFlag, name)
+	_ = os.Setenv(env.HookFlag, name)
 	exportEnvs[env.HookFlag] = &name
-	originPath := os.Getenv("PATH")
-	exportEnvs[env.PathFlag] = &originPath
-	sdkPaths := envKeys.Paths
-	if len(sdkPaths) != 0 {
-		paths := manager.EnvManager.Paths(append(sdkPaths[:], originPath))
-		exportEnvs["PATH"] = &paths
-	}
+	osPaths := env.NewPaths(env.OsPaths)
+	pathsStr := envKeys.Paths.Merge(osPaths).String()
+	exportEnvs["PATH"] = &pathsStr
+	exportEnvs[internal.HookCurTmpPath] = &manager.PathMeta.CurTmpPath
 
 	path := manager.PathMeta.ExecutablePath
 	path = strings.Replace(path, "\\", "/", -1)

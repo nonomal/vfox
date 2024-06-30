@@ -22,11 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
 
-	"github.com/version-fox/vfox/internal/util"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -78,6 +78,7 @@ func (w *windowsEnvManager) Flush() (err error) {
 			Variables: Vars{
 				"VERSION_FOX_PATH": &pathValue,
 			},
+			Paths: NewPaths(EmptyPaths),
 		})); err != nil {
 			return err
 		}
@@ -85,7 +86,9 @@ func (w *windowsEnvManager) Flush() (err error) {
 		_ = w.Remove(&Envs{
 			Variables: Vars{
 				"VERSION_FOX_PATH": nil,
-			}})
+			},
+			Paths: NewPaths(EmptyPaths),
+		})
 	}
 	// user env
 	oldPath, success := w.Get("PATH")
@@ -103,7 +106,7 @@ func (w *windowsEnvManager) Flush() (err error) {
 		}
 		userNewPaths = append(userNewPaths, v)
 	}
-	if err = w.key.SetStringValue("PATH", strings.Join(userNewPaths, ";")); err != nil {
+	if err = w.setEnv("PATH", strings.Join(userNewPaths, ";")); err != nil {
 		return err
 	}
 	// sys env
@@ -132,12 +135,12 @@ func (w *windowsEnvManager) Load(envs *Envs) error {
 		if err != nil {
 			return err
 		}
-		err = w.key.SetStringValue(k, *v)
+		err = w.setEnv(k, *v)
 		if err != nil {
 			return err
 		}
 	}
-	for _, path := range envs.Paths {
+	for _, path := range envs.Paths.Slice() {
 		_, ok := w.pathMap[path]
 		if !ok {
 			w.pathMap[path] = struct{}{}
@@ -145,6 +148,13 @@ func (w *windowsEnvManager) Load(envs *Envs) error {
 		}
 	}
 	return nil
+}
+
+func (w *windowsEnvManager) setEnv(key, val string) error {
+	if strings.Contains(val, "%") {
+		return w.key.SetExpandStringValue(key, val)
+	}
+	return w.key.SetStringValue(key, val)
 }
 
 func (w *windowsEnvManager) Get(key string) (string, bool) {
@@ -163,7 +173,7 @@ func (w *windowsEnvManager) Remove(envs *Envs) error {
 		_ = w.key.DeleteValue(k)
 	}
 
-	for _, k := range envs.Paths {
+	for _, k := range envs.Paths.Slice() {
 		if _, ok := w.pathMap[k]; ok {
 			delete(w.pathMap, k)
 			var newPaths []string
@@ -195,21 +205,6 @@ func (w *windowsEnvManager) broadcastEnvironment() error {
 	return nil
 }
 
-func (w *windowsEnvManager) Paths(paths []string) string {
-	if os.Getenv(HookFlag) == "bash" {
-		set := util.NewSortedSet[string]()
-		for _, p := range paths {
-			for _, pp := range strings.Split(p, ";") {
-				set.Add(pp)
-			}
-		}
-		return strings.Join(set.Slice(), ":")
-	} else {
-		set := util.NewSortedSetWithSlice(paths)
-		return strings.Join(set.Slice(), ";")
-	}
-}
-
 func NewEnvManager(vfConfigPath string) (Manager, error) {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE|registry.QUERY_VALUE)
 	if err != nil {
@@ -226,4 +221,28 @@ func NewEnvManager(vfConfigPath string) (Manager, error) {
 		return nil, err
 	}
 	return manager, nil
+}
+
+func (p *Paths) String() string {
+
+	if os.Getenv(HookFlag) == "bash" {
+		pps := p.Slice()
+		paths := make([]string, 0)
+		for _, path := range pps {
+			path = filepath.ToSlash(path)
+			// Convert drive letter (e.g., "C:") to "/c"
+			if len(path) > 1 && path[1] == ':' {
+				path = "/" + strings.ToLower(string(path[0])) + path[2:]
+			}
+			paths = append(paths, path)
+		}
+		return strings.Join(paths, ":")
+	} else {
+		return strings.Join(p.Slice(), ";")
+	}
+}
+
+func (p *Paths) Add(path string) bool {
+	path = filepath.FromSlash(path)
+	return p.SortedSet.Add(path)
 }

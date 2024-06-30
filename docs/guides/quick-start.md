@@ -36,7 +36,6 @@ installation wizard to install.
 ::: details Homebrew
 
 ```shell
-$ brew tap version-fox/tap
 $ brew install vfox
 ```
 
@@ -104,53 +103,45 @@ echo 'vfox activate fish | source' >> ~/.config/fish/config.fish
 
 :::
 
-::: details Powershell
+::: details PowerShell
 
-Open PowerShell Profile:
-
-```shell
-New-Item -Type File -Path $PROFILE # Just ignore the 'file already exists' error.
-
-# If it prompts "Unable to find the path", then you need to forcefully create profile. Add the "-Force" option.
-# New-Item -Type File -Path $PROFILE –Force
-
-Invoke-Item $PROFILE  # open Profile
+```PowerShell
+if (-not (Test-Path -Path $PROFILE)) { New-Item -Type File -Path $PROFILE -Force }; Add-Content -Path $PROFILE -Value 'Invoke-Expression "$(vfox activate pwsh)"'
 ```
 
-Add the following line to the end of your profile and save:
+If PowerShell prompts: `cannot be loaded because the execution of scripts is disabled on this system`.**Open PowerShell** with **Run as Administrator**.Then, run this command in PowerShell
 
 ```shell
-Invoke-Expression "$(vfox activate pwsh)"
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned
+# After that type Y and press Enter.
+y
 ```
 
+:::
+
+::: details Clink & Cmder
+
+1. Find the scripts path:
+   ```shell
+   clink info | findstr scripts
+   ```
+2. Copy [clink_vfox.lua](https://github.com/version-fox/vfox/blob/main/internal/shell/clink_vfox.lua) to the scripts directory
+3. Restart Clink or Cmder
 :::
 
 ## 3. Add a plugin
 
 **Command**: `vfox add <plugin-name>`
 
-After you have installed [vfox](https://github.com/version-fox/vfox), you still can't do anything. You need to install
-the corresponding plugin first.
+After you have installed [vfox](https://github.com/version-fox/vfox), you still can't do anything. **You need to install the corresponding plugin first**.
 
 ::: tip
 If you don't know which plugin to add, you can use the `vfox available` command to see all available plugins.
 :::
 
 ```bash 
-$ vfox add nodejs/nodejs
+$ vfox add nodejs
 ```
-
-::: tip About plugins and SDKs
-In the `vfox` concept, the plugin is the SDK, and the SDK is the plugin. You can think of the plugin as an extension of `vfox`
-to manage different tools and runtime environments.
-
-Taking the `nodejs/npmmirror` plugin as an example, `nodejs` is the category, `npmmirror` is the plugin name, and the
-**SDK name** marked by the `name` field inside the plugin.
-
-So, when deleting the plugin, you need to use the **SDK name** (here is `nodejs`) for deletion, not the plugin name
-`nodejs/npmirror` or `npmmirror`.
-
-:::
 
 ## 4. Install a runtime
 
@@ -164,16 +155,24 @@ We only install the latest available `latest` version:
 $ vfox install nodejs@latest
 ```
 
-::: tip
-`vfox` forces the use of an exact version. `latest` is a behavior that is parsed to the actual version number at
-runtime, depending on the plugin's implementation.
-:::
-
 Of course, we can also install a specific version:
 
 ```bash
 $ vfox install nodejs@21.5.0
 ```
+
+::: warning
+`vfox` forces the use of an exact version. `latest` is a behavior that is parsed to the actual version number at
+runtime, depending on the plugin's implementation.
+
+If you **don't know the specific version **, you can use `vfox search nodejs` to see all available versions.
+:::
+
+::: tip 
+`install` and `search` commands will check if the plugin is already added locally. If not, they will **automatically
+add the plugin**.
+:::
+
 
 ## 5. Switch runtime
 
@@ -183,18 +182,23 @@ $ vfox install nodejs@21.5.0
 
 ### Global
 
-Global default configuration is managed in the `$HOME/.version-fox/.tool-versions` file. Use the following command to
-set:
+**It takes effect globally**
 
 ```shell
 $ vfox use -g nodejs
 ```
 
-The contents of the `$HOME/.version-fox/.tool-versions` file as follows:
+::: tip
+
+`Global` is managed in the `$HOME/.version-fox/.tool-versions` file. 
+
+The contents of the `.tool-versions` file as follows:
 
 ```text
 nodejs 21.5.0
 ```
+
+:::
 
 ::: danger Does not take effect after execution?
 Please check if there is a runtime installed **previously** through other means in the `$PATH`!
@@ -208,27 +212,23 @@ For **Windows** users:
 2. `vfox` will automatically add the installed runtime to the **user environment variable** `Path`.
 
 3. If there is a runtime installed **previously** through other means in your `Path`, please remove it manually!
-   :::
+ :::
 
-### Session
-
-The session scope takes effect only for the current shell session. In other words, the versions are not shared between.
-
-The session scope is defined in the `$HOME/.version-fox/tmp/<shell-pid>/.tool-versions` file (temporary directory). Use
-the following command to set:
-
-```shell
-$ vfox use -s nodejs
-```
 
 ### Project
 
-The project scope is defined in the `$PWD/.tool-versions` file (current working directory). Typically, this is a
-project's Git repository. Use the following command to set:
+**Different versions for different projects**
 
 ```shell
 $ vfox use -p nodejs
 ```
+
+`vfox` will **automatically detect whether there is a `.tool-versions` file** in the directory when you enter a directory. 
+If it exists, `vfox` will **automatically switch to the version specified by the project**.
+
+::: tip
+`Project` is managed in the `$PWD/.tool-versions` file (current working directory). 
+::: 
 
 ::: warning Default scope
 
@@ -238,6 +238,28 @@ For **Windows**: The default scope is `Global`
 
 For **Unix-like**: The default scope is `Session`
 :::
+
+### Session
+
+**Different versions for different Shells**
+
+```shell
+$ vfox use -s nodejs
+```
+
+The session scope takes effect only for the current shell session. In other words, the versions are not shared between.
+
+The main purpose of this scope is to meet **temporary needs**. 
+When you close the current terminal, `vfox` will **automatically switch back to the `Global`/`Project` version**.
+
+
+::: tip
+
+`Session` is managed in the `$HOME/.version-fox/tmp/<shell-pid>/.tool-versions` file (temporary directory). 
+
+:::
+
+
 
 ## Demo
 

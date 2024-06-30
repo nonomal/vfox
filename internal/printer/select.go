@@ -17,19 +17,25 @@
 package printer
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"atomicgo.dev/cursor"
 	"atomicgo.dev/keyboard"
 	"atomicgo.dev/keyboard/keys"
-	"fmt"
 	"github.com/lithammer/fuzzysearch/fuzzy"
 	"github.com/pterm/pterm"
 	"github.com/version-fox/vfox/internal/logger"
-	"sort"
-	"strings"
+	"github.com/version-fox/vfox/internal/util"
 )
 
 type PageKVSelect struct {
-	index             int
+	index int
+	// Options to highlight with green color
+	HighlightOptions util.Set[string]
+	// Options to disable
+	DisabledOptions   util.Set[string]
 	Options           []*KV
 	searchOptions     []*KV
 	pageOptions       []*KV
@@ -96,10 +102,14 @@ func (s *PageKVSelect) renderSelect() string {
 	}
 
 	for i, option := range indexMapper {
+		value := option.Value
+		if s.HighlightOptions.Contains(option.Key) {
+			value = pterm.LightGreen(value)
+		}
 		if i == s.index {
-			content += pterm.Sprintln(pterm.LightGreen("-> "), option.Value)
+			content += pterm.Sprintln(pterm.LightGreen("-> "), value)
 		} else {
-			content += pterm.Sprintln("  ", option.Value)
+			content += pterm.Sprintln("  ", value)
 		}
 	}
 	content += pterm.Sprintln("Press ↑/↓ to select and press ←/→ to page, and press Enter to confirm")
@@ -209,7 +219,15 @@ func (s *PageKVSelect) Show() (*KV, error) {
 				area.Update(s.renderSelect())
 			}
 		case keys.Enter:
-			s.result = s.pageOptions[s.index]
+			if s.index < len(s.pageOptions) {
+				s.result = s.pageOptions[s.index]
+				if (s.result != nil) && s.DisabledOptions.Contains(s.result.Key) {
+					return false, nil
+				}
+			} else {
+				s.result = nil
+				logger.Info("No search, program stopped.")
+			}
 			return true, nil
 		default:
 			return false, nil
