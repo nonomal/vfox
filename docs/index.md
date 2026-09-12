@@ -31,10 +31,13 @@ features:
     details: "Simple API, making it easy to add support for new tools!"
     icon: 🔌
   - title: "Shells"
-    details: "Supports Powershell, Bash, ZSH and Fish, with autocomplete feature."
+    details: "Supports Powershell, Bash, ZSH, Fish, Clink, and Nushell, with autocomplete feature."
     icon: 🐚
+  - title: Backwards Compatible
+    details: "Support for existing version files .tool-versions, .nvmrc, .node-version, .sdkmanrc for smooth migration!"
+    icon: ⏮
   - title: "One Config File"
-    details: ".tool-versions manages all tools, runtime environments and their versions."
+    details: ".vfox.toml/vfox.toml manages all tools, runtime environments and their versions."
     icon: 📄
 ---
 

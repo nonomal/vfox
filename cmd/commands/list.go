@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,24 +17,30 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+
 	"github.com/pterm/pterm"
 	"github.com/pterm/pterm/putils"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal"
 )
 
 var List = &cli.Command{
-	Name:    "list",
-	Aliases: []string{"ls"},
-	Usage:   "list all versions of the target sdk",
-	Action:  listCmd,
+	Name:     "list",
+	Aliases:  []string{"ls"},
+	Usage:    "List all versions of the target SDK",
+	Action:   listCmd,
+	Category: CategorySDK,
 }
 
-func listCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManager()
+func listCmd(ctx context.Context, cmd *cli.Command) error {
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
+	}
 	defer manager.Close()
-	sdkName := ctx.Args().First()
+	sdkName := cmd.Args().First()
 	if sdkName == "" {
 		allSdk, err := manager.LoadAllSdk()
 		if err != nil {
@@ -44,10 +50,12 @@ func listCmd(ctx *cli.Context) error {
 			return fmt.Errorf("you don't have any sdk installed yet")
 		}
 		tree := pterm.LeveledList{}
-		for name, s := range allSdk {
+
+		for _, s := range allSdk {
+			name := s.Metadata().Name
 			tree = append(tree, pterm.LeveledListItem{Level: 0, Text: name})
-			for _, version := range s.List() {
-				tree = append(tree, pterm.LeveledListItem{Level: 1, Text: "v" + string(version)})
+			for _, version := range s.InstalledList() {
+				tree = append(tree, pterm.LeveledListItem{Level: 1, Text: string(version)})
 			}
 		}
 		// Generate tree from LeveledList.
@@ -62,15 +70,15 @@ func listCmd(ctx *cli.Context) error {
 		return fmt.Errorf("%s not supported, error: %w", sdkName, err)
 	}
 	curVersion := source.Current()
-	list := source.List()
+	list := source.InstalledList()
 	if len(list) == 0 {
 		return fmt.Errorf("no available version")
 	}
 	for _, version := range list {
 		if version == curVersion {
-			pterm.Println("->", fmt.Sprintf("v%s", version), pterm.LightGreen("<— current"))
+			pterm.Println("->", fmt.Sprintf("%s", version), pterm.LightGreen("<— current"))
 		} else {
-			pterm.Println("->", fmt.Sprintf("v%s", version))
+			pterm.Println("->", fmt.Sprintf("%s", version))
 		}
 	}
 	return nil

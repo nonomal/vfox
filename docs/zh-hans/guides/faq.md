@@ -1,42 +1,31 @@
 # 常见问题
 
+## 如何卸载vfox?
+
+请参考[卸载指南](./uninstallation.md)了解如何从系统中完全删除vfox的详细说明。
+
 ## 切换xxx不生效？ `vfox use`命令不生效？
 
-如果你看到提示`Warning: The current shell lacks hook support or configuration. It has switched to global scope automatically`
+如果你看到提示`"vfox requires hook support. Please ensure vfox is properly initialized with 'vfox activate'`
 则说明你没有将`vfox`正确挂在到你的`Shell`上。
 
 请按照[快速入门#_2-挂载vfox到你的shell](./quick-start.md#_2-挂载vfox到你的shell)步骤进行手动挂载。
 
-## 为什么我删除不了插件?
+## 在 Docker、CI/CD 或其他非交互 Shell 中应该怎么使用 vfox？
 
-```text
-我先是 add 了 java/adoptium-jdk ，然后尝试安装 v21 ，因为下载慢就中途退出了，然后尝试 remove 命令去掉这个 plugin ，得到错误信息 "java/adoptium-jdk not installed"。
+推荐优先使用 `vfox exec`。
 
-那么我想换另一个源，执行 "vfox add java/azul-jdk" 时，也得到错误信息 "plugin java already exists"，现在是进退不能了。
-```
+`vfox activate` 的工作方式是安装 Shell Hook，这更适合交互式 Shell。在 Docker 构建步骤、CI Job 以及其他非交互 Shell 中，这些 Hook 通常不会自动触发。
 
-在`vfox`理念中, 插件即SDK、SDK即插件. 你可以将插件理解为`vfox`的一种扩展, 用于管理不同的工具和运行环境。
-
-以`nodejs/npmmirror`插件为例, `nodejs`是分类, `npmmirror`是插件名, 插件内部`name`字段标注的叫**SDK名**。
-
-所以, 在删除插件时, 需要使用**SDK名**(这里就是`nodejs`)进行删除, 而不是插件名`nodejs/npmirror`或`npmmirror`。
+推荐示例：
 
 ```bash
-$ vfox remove nodejs
+vfox exec nodejs@24.14.0 -- npm install -g pnpm
+vfox exec nodejs@24.14.0 -- bash -lc 'node -v && npm -v'
 ```
 
-在删除之前, 你可以使用`vfox ls`查看当前已安装的插件(即SDK名称), 然后再进行删除。
+如果你希望把版本选择持久化到 Global、Project 或 Session 作用域，请使用 `vfox use`。如果你希望某条命令立刻在正确的 SDK 环境中执行，请使用 `vfox exec`。
 
-## Windows下PATH环境变量值重复?
-
-只有一种情况下会出现这种情况, 就是你全局(`vfox use -g`)使用过SDK, 这个时候`vfox`会操作注册表,将SDK的`PATH`写入用户环境变量当中(为的是,
-**不支持Hook功能**的Shell也能使用SDK, 例如`CMD`)。
-
-但是因为`.tool-versions`机制的存在, 所以`PATH`就变成了`.tool-verions` + 用户环境变量`PATH`两部分组成。
-
-::: warning
-同一个SDK**最多重复两条**, 不会无限重复。如果>2次, 请反馈给我们。
-::: 
 
 ## GitBash下`use`和`search`命令无法进行选择?
 

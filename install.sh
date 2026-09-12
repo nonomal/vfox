@@ -1,57 +1,228 @@
 #!/bin/bash
 
-# Check if curl or wget is installed
-if command -v curl &> /dev/null
-then
-  DOWNLOAD_CMD="curl -LO"
-elif command -v wget &> /dev/null
-then
-  DOWNLOAD_CMD="wget"
-else
-  echo "Neither curl nor wget was found. Please install one of them and try again."
-  exit 1
-fi
+main() {
+  # Parse command-line arguments
+  USER_INSTALL=false
+  VERSION=""
+  GITHUB_BASE_URL="https://github.com"
+  GITHUB_API_URL="https://api.github.com"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --user)
+        USER_INSTALL=true
+        shift
+        ;;
+      --version)
+        if [ -z "$2" ]; then
+          echo "Error: --version requires a value (e.g. --version 0.5.6 or --version v0.5.6)"
+          exit 1
+        fi
+        VERSION="$2"
+        shift 2
+        ;;
+      --version=*)
+        VERSION="${1#--version=}"
+        if [ -z "$VERSION" ]; then
+          echo "Error: --version requires a value (e.g. --version=0.5.6)"
+          exit 1
+        fi
+        shift
+        ;;
+      --vfox-installer-github-base-url=*)
+        GITHUB_BASE_URL="${1#--vfox-installer-github-base-url=}"
+        GITHUB_BASE_URL="${GITHUB_BASE_URL%/}"
+        GITHUB_API_URL="${GITHUB_BASE_URL//github.com/api.github.com}"
+        GITHUB_API_URL="${GITHUB_API_URL%/}"
+        shift
+        ;;
+      *)
+        echo "Unknown argument: $1"
+        echo "Usage: $0 [--user] [--version <version>] [--vfox-installer-github-base-url=<url>]"
+        exit 1
+        ;;
+    esac
+  done
 
-# Get the latest version
-VERSION=$(curl --silent "https://api.github.com/repos/version-fox/vfox/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | cut -c 2-)
+  # Strip a leading 'v' from a user-supplied version (we add it back when needed)
+  if [ -n "$VERSION" ]; then
+    VERSION="${VERSION#v}"
+  fi
 
-if [ -z "$VERSION" ]; then
-  echo "Failed to get the latest version. Please check your network connection and try again."
-  exit 1
-fi
-echo "Installing vfox v$VERSION ..."
+  # Detect if running in Termux
+  IS_TERMUX=false
+  case "${HOME:-}" in
+    *com.termux*)
+      IS_TERMUX=true
+      echo "Detected Termux environment"
+      ;;
+  esac
 
-# Check if the OS is supported
-OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
-if [ "$OS_TYPE" = "darwin" ]; then
-  OS_TYPE="macos"
-fi
+  # Set installation directory and sudo command based on environment
+  if [ "$USER_INSTALL" = true ]; then
+    INSTALL_DIR="${HOME}/.local/bin"
+    SUDO_CMD=""
+    echo "Installing to user directory: $INSTALL_DIR"
+  elif [ "$IS_TERMUX" = true ]; then
+    INSTALL_DIR="${PREFIX}/bin"
+    SUDO_CMD=""
+  else
+    INSTALL_DIR="/usr/local/bin"
+    # Check if sudo is available
+    if command -v sudo &> /dev/null; then
+      SUDO_CMD="sudo"
+    else
+      SUDO_CMD=""
+    fi
+  fi
 
-ARCH_TYPE=$(uname -m)
+  # Check if curl or wget is installed
+  if command -v curl &> /dev/null
+  then
+    DOWNLOAD_CMD="curl -LO"
+    API_CMD="curl --silent"
+  elif command -v wget &> /dev/null
+  then
+    DOWNLOAD_CMD="wget"
+    API_CMD="wget -qO-"
+  else
+    echo "Neither curl nor wget was found. Please install one of them and try again."
+    exit 1
+  fi
 
-if [ "$ARCH_TYPE" = "arm64" ]; then
-    ARCH_TYPE="aarch64"
-fi
+  # Get the version: use the user-specified one if provided, otherwise fetch latest
+  if [ -n "$VERSION" ]; then
+    if [ -n "${GITHUB_TOKEN}" ]; then
+      API_RESPONSE=$($API_CMD --header "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}/repos/version-fox/vfox/releases/tags/v${VERSION}")
+    else
+      API_RESPONSE=$($API_CMD "${GITHUB_API_URL}/repos/version-fox/vfox/releases/tags/v${VERSION}")
+    fi
+  elif [ -n "${GITHUB_TOKEN}" ]; then
+      API_RESPONSE=$($API_CMD --header "Authorization: Bearer ${GITHUB_TOKEN}" "${GITHUB_API_URL}/repos/version-fox/vfox/releases/latest")
+  else
+      API_RESPONSE=$($API_CMD "${GITHUB_API_URL}/repos/version-fox/vfox/releases/latest")
+  fi
 
-FILENAME="vfox_${VERSION}_${OS_TYPE}_${ARCH_TYPE}"
-TAR_FILE="${FILENAME}.tar.gz"
+  # Check if the response contains an error message
+  if echo "$API_RESPONSE" | grep -q '"message":'; then
+    echo "GitHub API Error:"
+    echo "$API_RESPONSE"
+    exit 1
+  fi
 
-echo https://github.com/version-fox/vfox/releases/download/v$VERSION/$TAR_FILE
-$DOWNLOAD_CMD https://github.com/version-fox/vfox/releases/download/v$VERSION/$TAR_FILE
+  RESOLVED_VERSION=$(echo "$API_RESPONSE" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | cut -c 2-)
+  if [ -z "$RESOLVED_VERSION" ]; then
+    if [ -n "$VERSION" ]; then
+      echo "Failed to find vfox version v${VERSION} on GitHub. Please verify the version exists at ${GITHUB_BASE_URL}/version-fox/vfox/releases."
+    else
+      echo "Failed to get the latest version. Please check your network connection and try again."
+    fi
+    exit 1
+  fi
+  VERSION="$RESOLVED_VERSION"
+  echo "Installing vfox v$VERSION ..."
+
+  # Check if the OS is supported
+  OS_TYPE=$(uname -s | tr '[:upper:]' '[:lower:]')
+  if [ "$OS_TYPE" = "darwin" ]; then
+    OS_TYPE="macos"
+  fi
+
+  ARCH_TYPE=$(uname -m)
+
+  if [ "$ARCH_TYPE" = "arm64" ]; then
+      ARCH_TYPE="aarch64"
+  elif [ "$ARCH_TYPE" = "loongarch64" ]; then
+      ARCH_TYPE="loong64"
+  fi
+
+  FILENAME="vfox_${VERSION}_${OS_TYPE}_${ARCH_TYPE}"
+  TAR_FILE="${FILENAME}.tar.gz"
+
+  echo "${GITHUB_BASE_URL}/version-fox/vfox/releases/download/v${VERSION}/${TAR_FILE}"
+  $DOWNLOAD_CMD "${GITHUB_BASE_URL}/version-fox/vfox/releases/download/v${VERSION}/${TAR_FILE}"
 
 
-tar -zxvf $TAR_FILE
-if [ $? -ne 0 ]; then
-  echo "Failed to extract vfox binary. Please check if the downloaded file is a valid tar.gz file."
-  exit 1
-fi
+  tar -zxvf $TAR_FILE
+  if [ $? -ne 0 ]; then
+    echo "Failed to extract vfox binary. Please check if the downloaded file is a valid tar.gz file."
+    exit 1
+  fi
 
-sudo mv "${FILENAME}/vfox" /usr/local/bin
+  # Create installation directory
+  $SUDO_CMD mkdir -p "$INSTALL_DIR"
+  if [ $? -ne 0 ]; then
+    echo "Failed to create $INSTALL_DIR directory. Please check your permissions and try again."
+    exit 1
+  fi
 
-if [ $? -ne 0 ]; then
-  echo "Failed to move vfox to /usr/local/bin. Please check your sudo permissions and try again."
-  exit 1
-fi
-rm $TAR_FILE
-rm -rf $FILENAME
-echo "vfox installed successfully!"
+  if [ -d "$INSTALL_DIR" ]; then
+    $SUDO_CMD mv "${FILENAME}/vfox" "$INSTALL_DIR"
+  else
+    echo "$INSTALL_DIR is not a directory. Please make sure it is a valid directory path."
+    exit 1
+  fi
+
+  if [ $? -ne 0 ]; then
+    echo "Failed to move vfox to $INSTALL_DIR. Please check your permissions and try again."
+    exit 1
+  fi
+  rm $TAR_FILE
+  rm -rf $FILENAME
+  echo "vfox installed successfully!"
+
+  # Check and update PATH if installing to user directory
+  if [ "$USER_INSTALL" = true ]; then
+    # Check if ~/.local/bin is in PATH using POSIX-compliant pattern matching
+    case ":$PATH:" in
+      *":$INSTALL_DIR:"*)
+        echo "$INSTALL_DIR is already in your PATH."
+        ;;
+      *)
+        echo ""
+        echo "WARNING: $INSTALL_DIR is not in your PATH."
+        echo "To add it to your PATH, run one of the following commands based on your shell:"
+        echo ""
+
+        # Common export command for bash/zsh
+        PATH_EXPORT_CMD='export PATH="$HOME/.local/bin:$PATH"'
+
+        # Detect the current shell more reliably than using $SHELL alone
+        if command -v ps >/dev/null 2>&1; then
+          CURRENT_SHELL=$(ps -p "$$" -o comm= 2>/dev/null | tr -d ' ')
+        fi
+        if [ -z "$CURRENT_SHELL" ] && [ -n "$SHELL" ]; then
+          CURRENT_SHELL=$(basename "$SHELL")
+        fi
+
+        case "$CURRENT_SHELL" in
+          bash)
+            echo "  For bash:"
+            echo "    echo '$PATH_EXPORT_CMD' >> ~/.bashrc"
+            echo "    source ~/.bashrc"
+            ;;
+          zsh)
+            echo "  For zsh:"
+            echo "    echo '$PATH_EXPORT_CMD' >> ~/.zshrc"
+            echo "    source ~/.zshrc"
+            ;;
+          fish)
+            echo "  For fish:"
+            echo "    # Run this in a fish shell:"
+            echo "    fish_add_path $INSTALL_DIR"
+            echo "    # Or persist it by adding this line to your config:"
+            echo "    echo 'fish_add_path $INSTALL_DIR' >> ~/.config/fish/config.fish"
+            ;;
+          *)
+            echo "  For bash/zsh:"
+            echo "    echo '$PATH_EXPORT_CMD' >> ~/.bashrc  # or ~/.zshrc"
+            echo "    source ~/.bashrc  # or source ~/.zshrc"
+            ;;
+        esac
+        echo ""
+        echo "Or manually add $INSTALL_DIR to your PATH in your shell's configuration file."
+        ;;
+    esac
+  fi
+}
+
+main "$@"

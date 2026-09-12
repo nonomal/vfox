@@ -1,5 +1,6 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -12,13 +13,28 @@
  *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
+ *
  */
 
 package env
 
-type Scope int
+type UseScope int
 
 const (
-	Global Scope = iota
-	Local
+	Global UseScope = iota
+	Project
+	Session
 )
+
+func (s UseScope) String() string {
+	switch s {
+	case Global:
+		return "global"
+	case Project:
+		return "project"
+	case Session:
+		return "session"
+	default:
+		return "unknown"
+	}
+}

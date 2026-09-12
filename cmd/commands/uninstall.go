@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,27 +17,35 @@
 package commands
 
 import (
+	"context"
 	"fmt"
-	"github.com/pterm/pterm"
-	"github.com/urfave/cli/v2"
-	"github.com/version-fox/vfox/internal"
 	"os"
 	"strings"
+
+	"github.com/pterm/pterm"
+	"github.com/urfave/cli/v3"
+	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/env"
+	"github.com/version-fox/vfox/internal/sdk"
 )
 
 var Uninstall = &cli.Command{
-	Name:    "uninstall",
-	Aliases: []string{"un"},
-	Usage:   "uninstall a version of sdk",
-	Action:  uninstallCmd,
+	Name:     "uninstall",
+	Aliases:  []string{"un"},
+	Usage:    "Uninstall a version of the target SDK",
+	Action:   uninstallCmd,
+	Category: CategorySDK,
 }
 
-func uninstallCmd(ctx *cli.Context) error {
-	sdkArg := ctx.Args().First()
+func uninstallCmd(ctx context.Context, cmd *cli.Command) error {
+	sdkArg := cmd.Args().First()
 	if sdkArg == "" {
 		return cli.Exit("sdk name is required", 1)
 	}
-	manager := internal.NewSdkManagerWithSource(internal.SessionRecordSource, internal.GlobalRecordSource, internal.ProjectRecordSource)
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
+	}
 	defer manager.Close()
 	argArr := strings.Split(sdkArg, "@")
 	argsLen := len(argArr)
@@ -46,25 +54,26 @@ func uninstallCmd(ctx *cli.Context) error {
 	}
 
 	name := strings.ToLower(argArr[0])
-	version := internal.Version(argArr[1])
+	version := sdk.Version(argArr[1])
+	resolvedVersion := manager.ResolveVersion(name, version)
 
 	source, err := manager.LookupSdk(name)
 	if err != nil {
 		return fmt.Errorf("%s not supported, error: %w", name, err)
 	}
 	cv := source.Current()
-	if err = source.Uninstall(version); err != nil {
+	if err = source.Uninstall(resolvedVersion); err != nil {
 		return err
 	}
-	remainVersion := source.List()
+	remainVersion := source.InstalledList()
 	if len(remainVersion) == 0 {
-		_ = os.RemoveAll(source.InstallPath)
+		_ = os.RemoveAll(source.Metadata().SdkInstalledPath)
 		return nil
 	}
 	if cv == version {
 		pterm.Println("Auto switch to the other version.")
 		firstVersion := remainVersion[0]
-		return source.Use(firstVersion, internal.Global)
+		return source.Use(firstVersion, env.Global)
 	}
 	return nil
 }

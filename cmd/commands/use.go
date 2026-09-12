@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,100 +17,180 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/version-fox/vfox/internal/env"
+	"github.com/version-fox/vfox/internal/sdk"
+	"github.com/version-fox/vfox/internal/shared/util"
+
 	"github.com/pterm/pterm"
 	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/shared/logger"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 var Use = &cli.Command{
 	Name:    "use",
 	Aliases: []string{"u"},
-	Usage:   "use a version of sdk",
+	Usage:   "Use a version of the target SDK",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "global",
 			Aliases: []string{"g"},
-			Usage:   "used with the global environment",
+			Usage:   "Used with the global environment",
 		},
 		&cli.BoolFlag{
 			Name:    "project",
 			Aliases: []string{"p"},
-			Usage:   "used with the current directory",
+			Usage:   "Used with the current directory",
 		},
 		&cli.BoolFlag{
 			Name:    "session",
 			Aliases: []string{"s"},
-			Usage:   "used with the current shell session",
+			Usage:   "Used with the current shell session (default)",
+		},
+		&cli.BoolFlag{
+			Name:  "unlink",
+			Usage: "Do not create symlinks for project scope (downgrade to session scope)",
 		},
 	},
-	Action: useCmd,
+	Action:   useCmd,
+	Category: CategorySDK,
 }
 
-func useCmd(ctx *cli.Context) error {
-	sdkArg := ctx.Args().First()
+func useCmd(ctx context.Context, cmd *cli.Command) error {
+	sdkArg := cmd.Args().First()
 	if len(sdkArg) == 0 {
 		return fmt.Errorf("invalid parameter. format: <sdk-name>[@<version>]")
 	}
-	var (
-		name    string
-		version internal.Version
-	)
-	argArr := strings.Split(sdkArg, "@")
-	if len(argArr) <= 1 {
-		name = argArr[0]
-		version = ""
-	} else {
-		name = argArr[0]
-		version = internal.Version(argArr[1])
-	}
 
-	var recordSources []internal.RecordSource
-	scope := internal.Session
-	if ctx.IsSet("global") {
-		scope = internal.Global
-		recordSources = append(recordSources, internal.SessionRecordSource, internal.GlobalRecordSource)
-	} else if ctx.IsSet("project") {
-		scope = internal.Project
-		recordSources = append(recordSources, internal.ProjectRecordSource)
-	} else {
-		scope = internal.Session
-		recordSources = append(recordSources, internal.SessionRecordSource)
+	// Parse SDK name and version
+	name, version := parseSdkArg(sdkArg)
+
+	// Determine scope
+	scope := determineScopeFromFlags(cmd)
+
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
 	}
-	manager := internal.NewSdkManagerWithSource(recordSources...)
 	defer manager.Close()
 
-	source, err := manager.LookupSdk(name)
+	// Lookup SDK
+	sdkSource, err := manager.LookupSdk(name)
 	if err != nil {
 		return fmt.Errorf("%s not supported, error: %w", name, err)
 	}
 
-	if version == "" {
-		list := source.List()
-		var arr []string
-		for _, version := range list {
-			arr = append(arr, string(version))
-		}
-		selectPrinter := pterm.InteractiveSelectPrinter{
-			TextStyle:     &pterm.ThemeDefault.DefaultText,
-			OptionStyle:   &pterm.ThemeDefault.DefaultText,
-			Options:       arr,
-			DefaultOption: "",
-			MaxHeight:     5,
-			Selector:      "->",
-			SelectorStyle: &pterm.ThemeDefault.SuccessMessageStyle,
-			Filter:        true,
-			OnInterruptFunc: func() {
-				os.Exit(0)
-			},
-		}
-		result, _ := selectPrinter.Show(fmt.Sprintf("Please select a version of %s", name))
-		version = internal.Version(result)
+	// Resolve version (with interactive prompt if needed)
+	resolvedVersion, err := resolveVersion(sdkSource, manager, version, name)
+	if err != nil {
+		return err
 	}
 
-	return source.Use(version, scope)
+	// Determine if should unlink (only valid for project scope)
+	unlink := cmd.IsSet("unlink")
+
+	// Execute use operation
+	return sdkSource.UseWithConfig(resolvedVersion, scope, unlink)
+}
+
+// parseSdkArg parses the SDK argument in format "name@version"
+func parseSdkArg(sdkArg string) (name string, version sdk.Version) {
+	parts := strings.Split(sdkArg, "@")
+	name = parts[0]
+	if len(parts) > 1 {
+		// Remove 'v' prefix if present (e.g., "v20.0.0" -> "20.0.0")
+		version = sdk.Version(strings.TrimPrefix(parts[1], "v"))
+	}
+	return
+}
+
+// determineScopeFromFlags determines the scope based on command flags
+func determineScopeFromFlags(cmd *cli.Command) env.UseScope {
+	if cmd.IsSet("global") {
+		return env.Global
+	}
+	if cmd.IsSet("project") {
+		return env.Project
+	}
+	// Default to session if no scope specified
+	return env.Session
+}
+
+// resolveVersion resolves the version, with interactive selection if needed
+func resolveVersion(sdkSource sdk.Sdk, manager *internal.Manager, version sdk.Version, name string) (sdk.Version, error) {
+	// Handle @latest tag
+	if version == "latest" {
+		availableVersions, err := sdkSource.Available([]string{})
+		if err != nil {
+			return "", fmt.Errorf("failed to get available versions for %s: %w", name, err)
+		}
+		if len(availableVersions) == 0 {
+			return "", fmt.Errorf("no available versions for %s", name)
+		}
+		// Use the first available version (should be the latest)
+		latestVersion := availableVersions[0].Version
+		pterm.Printf("Using latest version: %s\n", pterm.LightGreen(latestVersion))
+		version = latestVersion
+	}
+
+	// Try to resolve version first
+	resolvedVersion := manager.ResolveVersion(name, version)
+	if resolvedVersion != "" {
+		return resolvedVersion, nil
+	}
+
+	// If not resolved, try interactive selection
+	installedVersions := sdkSource.InstalledList()
+	if len(installedVersions) == 0 {
+		return "", fmt.Errorf("no versions available for %s", name)
+	}
+
+	if util.IsNonInteractiveTerminal() {
+		return "", cli.Exit("Please specify a version to use in non-interactive environments", 1)
+	}
+
+	// Convert versions to strings for selection
+	versionStrings := make([]string, len(installedVersions))
+	for i, v := range installedVersions {
+		versionStrings[i] = string(v)
+	}
+
+	// Interactive selection
+	selectedVersion, err := selectFromOptions(versionStrings, name)
+	if err != nil {
+		return "", err
+	}
+
+	return sdk.Version(selectedVersion), nil
+}
+
+// selectFromOptions displays an interactive selection prompt
+func selectFromOptions(options []string, sdkName string) (string, error) {
+	selectPrinter := pterm.InteractiveSelectPrinter{
+		TextStyle:     &pterm.ThemeDefault.DefaultText,
+		OptionStyle:   &pterm.ThemeDefault.DefaultText,
+		Options:       options,
+		DefaultOption: "",
+		MaxHeight:     5,
+		Selector:      "->",
+		SelectorStyle: &pterm.ThemeDefault.SuccessMessageStyle,
+		Filter:        true,
+		OnInterruptFunc: func() {
+			os.Exit(0)
+		},
+	}
+
+	result, err := selectPrinter.Show(fmt.Sprintf("Please select a version of %s", sdkName))
+	if err != nil {
+		return "", fmt.Errorf("version selection failed: %w", err)
+	}
+
+	logger.Debugf("Selected version: %s for SDK: %s\n", result, sdkName)
+	return result, nil
 }

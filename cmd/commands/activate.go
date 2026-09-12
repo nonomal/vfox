@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,72 +17,248 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 
 	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/pathmeta"
+	"github.com/version-fox/vfox/internal/sdk"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal/env"
+	"github.com/version-fox/vfox/internal/shared/logger"
 	"github.com/version-fox/vfox/internal/shell"
+	"golang.org/x/sync/errgroup"
 )
 
 var Activate = &cli.Command{
-	Name:   "activate",
-	Hidden: true,
-	Action: activateCmd,
+	Name:     "activate",
+	Hidden:   true,
+	Action:   activateCmd,
+	Category: CategorySDK,
 }
 
-func activateCmd(ctx *cli.Context) error {
-	name := ctx.Args().First()
+func activateCmd(ctx context.Context, cmd *cli.Command) error {
+	name := cmd.Args().First()
 	if name == "" {
 		return cli.Exit("shell name is required", 1)
 	}
-	manager := internal.NewSdkManager(internal.GlobalRecordSource, internal.ProjectRecordSource)
-	defer manager.Record.Save()
-	defer manager.Close()
-	envKeys, err := manager.EnvKeys()
+	if env.IsInheritedHookSession() {
+		_ = os.Unsetenv(pathmeta.HookCurTmpPath)
+	}
+	manager, err := internal.NewSdkManager()
 	if err != nil {
 		return err
 	}
+	defer manager.Close()
+
+	runtimeEnvContext := manager.RuntimeEnvContext
+
+	// 1. Load Project and Global configs with scope information
+	chain, err := runtimeEnvContext.LoadVfoxTomlChainByScopes(env.Global, env.Project)
+	if err != nil {
+		return err
+	}
+
+	projectToml, _ := chain.GetTomlByScope(env.Project)
+	// Give a chance to legacy file to set tool versions if not already set in vfox.toml
+	// This allows backward compatibility with older projects using legacy files
+	// New projects should use vfox.toml directly
+	_ = manager.ParseLegacyFile(runtimeEnvContext.CurrentWorkingDir, func(sdkname, version string) {
+		// Set only if not already set in vfox.toml
+		if _, ok := projectToml.GetToolVersion(sdkname); !ok {
+			projectToml.SetTool(sdkname, version)
+		}
+	})
+
+	// 2. Process each SDK: check if link is needed, create symlinks if necessary
+	// Collect envs by scope to ensure proper PATH priority: Project > Session > Global > System
+	allTools := chain.GetAllTools()
+	envsByScope := map[env.UseScope]*env.Envs{
+		env.Project: env.NewEnvs(),
+		env.Session: env.NewEnvs(),
+		env.Global:  env.NewEnvs(),
+	}
+	var mu sync.Mutex
+
+	// Process SDKs concurrently using errgroup
+	g, _ := errgroup.WithContext(ctx)
+
+	for sdkName := range allTools {
+		sdkName := sdkName // Capture loop variable
+
+		g.Go(func() error {
+			// Lookup SDK
+			sdkObj, err := manager.LookupSdk(sdkName)
+			if err != nil {
+				logger.Debugf("SDK %s not found: %v", sdkName, err)
+				return nil // Continue processing other SDKs
+			}
+
+			// Resolve to the highest-priority installed version across scopes
+			toolConfig, scope, sdkVersion, ok := resolveInstalledToolConfig(chain, sdkObj, sdkName)
+			if !ok {
+				return nil
+			}
+
+			// Determine the actual scope to use
+			// - If the scope is Project but linking is not enabled, downgrade to Session
+			// - Global always uses link (no change)
+			// - Session always uses link (no change)
+			actualScope := scope
+			if env.Project == scope && sdk.IsUseUnLink(toolConfig.Attr) {
+				actualScope = env.Session
+			}
+
+			// Create symlinks if needed (internal logic checks if symlink already exists)
+			if err := sdkObj.CreateSymlinksForScope(sdkVersion, actualScope); err != nil {
+				logger.Debugf("Failed to create symlinks for %s@%s (scope: %s): %v",
+					sdkName, sdkVersion, actualScope.String(), err)
+				return nil // Continue processing other SDKs
+			}
+
+			// Get environment variables pointing to symlinks
+			sdkEnvs, err := sdkObj.EnvKeysForScope(sdkVersion, actualScope)
+			if err != nil {
+				logger.Debugf("Failed to get env keys for %s@%s: %v", sdkName, sdkVersion, err)
+				return nil // Continue processing other SDKs
+			}
+
+			// Collect envs by scope to ensure proper PATH priority (thread-safe)
+			mu.Lock()
+			envsByScope[actualScope].Merge(sdkEnvs)
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	// Wait for all SDK processing to complete
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	// 3. Merge envs by scope priority: Project > Session > Global
+	// This ensures proper priority for both PATH (Project first) and Vars (Project overrides)
+	finalEnvs := env.NewEnvs()
+	scopePriority := []env.UseScope{env.Project, env.Session, env.Global}
+	finalEnvs.MergeByScopePriority(envsByScope, scopePriority)
+
+	// 3. Build final PATH with proper priority:
+	// User-injected paths (e.g., virtualenv) > Project > Session > Global > Cleaned System PATH
+	//
+	// SplitSystemPaths separates:
+	// - prefixPaths: paths appearing BEFORE first vfox path (user-injected, highest priority)
+	// - cleanSystemPaths: remaining non-vfox paths (lowest priority)
+	prefixPaths, cleanSystemPaths := runtimeEnvContext.SplitSystemPaths()
+
+	// Build final path order: prefix > vfox > clean system
+	// We need to prepend prefixPaths to maintain their highest priority
+	newPaths := env.NewPaths(env.EmptyPaths)
+	newPaths.Merge(prefixPaths)
+	newPaths.Merge(finalEnvs.Paths)
+	newPaths.Merge(cleanSystemPaths)
+	finalEnvs.Paths = newPaths
+
+	// 4. Export environment variables
+	// Note: This step must be the first.
+	// the Paths will handle the path format of GitBash which is different from other shells.
+	// So we need to set the env.HookFlag first to let the Paths know
+	// which shell we are using.
+	_ = os.Setenv(env.HookFlag, name)
+
 	exportEnvs := make(env.Vars)
-	for k, v := range envKeys.Variables {
+	for k, v := range finalEnvs.Variables {
 		exportEnvs[k] = v
 	}
 
-	os.Setenv(env.HookFlag, name)
-	exportEnvs[env.HookFlag] = &name
-	originPath := os.Getenv("PATH")
-	exportEnvs[env.PathFlag] = &originPath
-	sdkPaths := envKeys.Paths
-	if len(sdkPaths) != 0 {
-		paths := manager.EnvManager.Paths(append(sdkPaths[:], originPath))
-		exportEnvs["PATH"] = &paths
-	}
+	// Add PATH with proper priority
+	pathStr := finalEnvs.Paths.String()
+	exportEnvs["PATH"] = &pathStr
 
-	path := manager.PathMeta.ExecutablePath
-	path = strings.Replace(path, "\\", "/", -1)
-	s := shell.NewShell(name)
-	if s == nil {
-		return fmt.Errorf("unknow target shell %s", name)
-	}
-	exportStr := s.Export(exportEnvs)
-	str, err := s.Activate()
+	// Export __VFOX_CURTMFPATH so that vfox env can use the same session directory
+	// This ensures state cache works across multiple vfox env calls in the same session
+	curTmpPath := runtimeEnvContext.PathMeta.Working.SessionSdkDir
+	exportEnvs[pathmeta.HookCurTmpPath] = &curTmpPath
+
+	logger.Debugf("Export envs: %+v", exportEnvs)
+
+	vfoxPath := runtimeEnvContext.PathMeta.Executable
+	vfoxPath = strings.Replace(vfoxPath, "\\", "/", -1)
+
+	script, err := renderActivateScript(name, vfoxPath, cmd.Args().Tail(), exportEnvs, env.IsMultiplexerEnvironment())
 	if err != nil {
 		return err
 	}
+	_, err = fmt.Fprint(cmd.Writer, script)
+	return err
+}
+
+func renderActivateScript(name, selfPath string, args []string, exportEnvs env.Vars, enablePidCheck bool) (string, error) {
+	s := shell.NewShell(name)
+	if s == nil {
+		return "", fmt.Errorf("unknown target shell %s", name)
+	}
+
+	if env.IsIDEEnvironmentResolution() {
+		exportOnly := make(env.Vars, len(exportEnvs))
+		for k, v := range exportEnvs {
+			switch k {
+			case env.PidFlag, env.HookFlag, env.InitializedFlag, pathmeta.HookCurTmpPath:
+				continue
+			default:
+				exportOnly[k] = v
+			}
+		}
+		// Explicitly unset hook session vars so they cannot be inherited by the
+		// IDE process. When VSCode (or other IDEs) resolves the shell
+		// environment, it spawns a login shell that inherits its own
+		// process.env. If the IDE itself was launched from a terminal where
+		// vfox was already activated, those vars leak through the captured
+		// environment into every integrated terminal, causing them to reuse
+		// the parent shell's session directory and cached state and breaking
+		// per-project version activation. __VFOX_INITIALIZED has the same
+		// problem for PowerShell: if it leaks through, integrated terminals
+		// skip prompt-hook registration entirely.
+		exportOnly[env.HookFlag] = nil
+		exportOnly[env.PidFlag] = nil
+		exportOnly[env.InitializedFlag] = nil
+		exportOnly[pathmeta.HookCurTmpPath] = nil
+		return s.Export(exportOnly), nil
+	}
+
+	exportStr := s.Export(exportEnvs)
+	str, err := s.Activate(
+		shell.ActivateConfig{
+			SelfPath:       selfPath,
+			Args:           args,
+			EnablePidCheck: enablePidCheck,
+		},
+	)
+	if err != nil {
+		return "", err
+	}
 	hookTemplate, err := template.New("hook").Parse(str)
 	if err != nil {
-		return nil
+		return "", err
 	}
 	tmpCtx := struct {
-		SelfPath   string
-		EnvContent string
+		SelfPath       string
+		EnvContent     string
+		EnablePidCheck bool
 	}{
-		SelfPath:   path,
-		EnvContent: exportStr,
+		SelfPath:       selfPath,
+		EnvContent:     exportStr,
+		EnablePidCheck: enablePidCheck,
 	}
-	return hookTemplate.Execute(ctx.App.Writer, tmpCtx)
+	var buf bytes.Buffer
+	if err := hookTemplate.Execute(&buf, tmpCtx); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
 }

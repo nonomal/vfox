@@ -1,50 +1,30 @@
 # FAQ
 
+## How do I uninstall vfox?
+
+Please refer to the [Uninstallation Guide](./uninstallation.md) for detailed instructions on how to completely remove vfox from your system.
+
 ## Switch xxx not work or the vfox use  command does not work ?
 
-If your shell prompt `Warning: The current shell lacks hook support or configuration. It has switched to global scope
-automatically` that means you do not hook `vfox` into your shell, please hook it manually first.
+If your shell prompt `vfox requires hook support. Please ensure vfox is properly initialized with 'vfox activate'`
+that means you do not hook `vfox` into your shell, please hook it manually first.
 
 Please refer to [Quick Start#_2-hook-vfox-to-your-shell](./quick-start.md#_2-hook-vfox-to-your-shell) to manually hook `vfox` into your shell.
 
-## Why can't I delete the plugin?
+## How should I use vfox in Docker, CI/CD, or other non-interactive shells?
 
-```text
-I first added java/adoptium-jdk, then tried to install v21, because the download was slow, I exited halfway, and then tried
-to remove the plugin with the remove command, and got the error message "java/adoptium-jdk not installed".
+Prefer `vfox exec`.
 
-So I want to switch to another source, when I execute "vfox add java/azul-jdk", I also get the error message "plugin java
-already exists", now I can't move forward or backward.
+`vfox activate` works by installing shell hooks, which are intended for interactive shells. In Docker build steps, CI jobs, and other non-interactive shells, these hooks are usually not triggered automatically.
 
-```
-
-In the `vfox` concept, the plugin is the SDK, and the SDK is the plugin. You can think of the plugin as an extension of `vfox`
-to manage different tools and runtime environments.
-
-Taking the `nodejs/npmmirror` plugin as an example, `nodejs` is the category, `npmmirror` is the plugin name, and the
-**SDK name** marked by the `name` field inside the plugin.
-
-So, when deleting the plugin, you need to use the **SDK name** (here is `nodejs`) for deletion, not the plugin name
-`nodejs/npmirror` or `npmmirror`.
+Recommended examples:
 
 ```bash
-$ vfox remove nodejs
+vfox exec nodejs@24.14.0 -- npm install -g pnpm
+vfox exec nodejs@24.14.0 -- bash -lc 'node -v && npm -v'
 ```
 
-before deleting, you can use `vfox ls` to view the currently installed plugins (i.e. SDK names), and then delete them.
-
-## Why does the PATH environment variable value repeat on Windows?
-
-Only one situation will cause this, that is, you have used the SDK globally (`vfox use -g`), at this time, `vfox` will
-operate the registry and write the SDK's `PATH` into the user environment variable (for the purpose of, **Shell that does not
-support Hook function** can also use SDK, such as `CMD`).
-
-But because of the existence of the `.tool-versions` mechanism, the `PATH` becomes the sum of `.tool-verions` and the user
-environment variable `PATH`.
-
-::: warning
-The same SDK **can be repeated at most twice**, it will not be repeated indefinitely. If >2 times, please feedback to us.
-:::
+Use `vfox use` when you want to persist version selection for Global, Project, or Session scope. Use `vfox exec` when you want a command to run immediately with the correct SDK environment.
 
 ## Why can't I select when use `use` and `search` commands in GitBash?
 

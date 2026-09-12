@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,19 +17,14 @@
 package config_test
 
 import (
-	"github.com/version-fox/vfox/internal/config"
 	"os"
 	"testing"
+
+	"github.com/version-fox/vfox/internal/config"
+	"github.com/version-fox/vfox/internal/shared/cache"
 )
 
 func TestNewConfig(t *testing.T) {
-	_, err := config.NewConfig("")
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestConfig_Proxy(t *testing.T) {
 	c, err := config.NewConfig("")
 	if err != nil {
 		t.Fatal(err)
@@ -40,8 +35,18 @@ func TestConfig_Proxy(t *testing.T) {
 	if !c.Proxy.Enable == false {
 		t.Fatal("proxy enable is invalid")
 	}
+	if c.Storage.SdkPath != "/tmp" {
+		t.Fatal("storage sdk path is invalid")
+	}
+	if !c.LegacyVersionFile.Enable {
+		t.Fatal("legacy version file enable is invalid")
+	}
+	if c.Cache.AvailableHookDuration != cache.Duration(-1) {
+		t.Fatal("cache available hook duration is invalid")
+	}
 }
-func TestConfigWithEmptyProxy(t *testing.T) {
+
+func TestConfigWithEmpty(t *testing.T) {
 	c, err := config.NewConfigWithPath("empty_test.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -52,15 +57,14 @@ func TestConfigWithEmptyProxy(t *testing.T) {
 	if !c.Proxy.Enable == false {
 		t.Fatal("proxy enable must be false")
 	}
-}
-
-func TestConfigWithStorage(t *testing.T) {
-	c, err := config.NewConfig("")
-	if err != nil {
-		t.Fatal(err)
+	if c.Storage.SdkPath != "" {
+		t.Fatal("proxy url must be empty")
 	}
-	if c.Storage.SdkPath != "/tmp" {
-		t.Fatal("storage sdk path is invalid")
+	if c.LegacyVersionFile.Enable != true {
+		t.Fatal("legacy version file enable must be true")
+	}
+	if c.Registry.Address != "" {
+		t.Fatal("registry address must be empty")
 	}
 }
 
@@ -74,14 +78,5 @@ func TestStorageWithWritePermission(t *testing.T) {
 	}
 	if err = s.Validate(); err != nil {
 		t.Fatal(err)
-	}
-}
-func TestConfigWithEmptyStorage(t *testing.T) {
-	c, err := config.NewConfigWithPath("empty_test.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Storage.SdkPath != "" {
-		t.Fatal("proxy url must be empty")
 	}
 }

@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -22,23 +22,60 @@ import (
 )
 
 const (
-	HookFlag = "__VFOX_SHELL"
-	PathFlag = "__VFOX_ORIG_PATH"
-	PidFlag  = "__VFOX_PID"
+	HomeFromEnv     = "VFOX_HOME"
+	HookFlag        = "__VFOX_SHELL"
+	PidFlag         = "__VFOX_PID"
+	InitializedFlag = "__VFOX_INITIALIZED"
 )
 
 func IsHookEnv() bool {
 	return os.Getenv(HookFlag) != ""
 }
 
-func GetOrigPath() string {
-	return os.Getenv(PathFlag)
+// IsMultiplexerEnvironment detects if the current shell session is running inside a multiplexer
+// or other environment where new panes/windows should have isolated environments.
+// This includes tmux, screen, and potentially other terminal multiplexers.
+//
+// Supported multiplexers:
+//   - tmux: Detects via TMUX environment variable
+//
+// Returns true if running in a multiplexer environment.
+func IsMultiplexerEnvironment() bool {
+	return os.Getenv("TMUX") != ""
+}
+
+// IsIDEEnvironmentResolution detects shells launched by IDEs only to read the
+// shell environment. Those shells should not publish vfox hook session state.
+func IsIDEEnvironmentResolution() bool {
+	return os.Getenv("VSCODE_RESOLVING_ENVIRONMENT") != "" ||
+		os.Getenv("INTELLIJ_ENVIRONMENT_READER") != ""
+}
+
+// IsInheritedHookSession reports whether vfox hook state was inherited from a
+// different shell process.
+func IsInheritedHookSession() bool {
+	pid := os.Getenv(PidFlag)
+	if pid == "" {
+		return false
+	}
+	p, err := strconv.Atoi(pid)
+	if err != nil {
+		return false
+	}
+	return p != os.Getppid()
 }
 
 func GetPid() int {
-	if pid := os.Getenv(PidFlag); pid != "" {
-		p, _ := strconv.Atoi(pid) // Convert pid from string to int
-		return p
+	if IsHookEnv() {
+		if pid := os.Getenv(PidFlag); pid != "" {
+			p, _ := strconv.Atoi(pid) // Convert pid from string to int
+			return p
+		}
 	}
+
 	return os.Getppid()
+}
+
+func GetVfoxHome() string {
+	return os.Getenv(HomeFromEnv)
 }

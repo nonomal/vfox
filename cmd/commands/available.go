@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,50 +17,59 @@
 package commands
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"github.com/pterm/pterm"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal"
 )
 
 var Available = &cli.Command{
-	Name:   "available",
-	Usage:  "show available plugins",
-	Action: availableCmd,
+	Name:     "available",
+	Usage:    "Show all available plugins",
+	Action:   availableCmd,
+	Category: CategoryPlugin,
 }
 
-func availableCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManagerWithSource()
-	defer manager.Close()
-	categoryName := ctx.Args().First()
-	categories, err := manager.Available()
+func availableCmd(ctx context.Context, cmd *cli.Command) error {
+	manager, err := internal.NewSdkManager()
 	if err != nil {
 		return err
 	}
-	data := pterm.TableData{
-		{"NAME", "VERSION", "AUTHOR", "DESCRIPTION"},
-	}
-	for _, category := range categories {
-		if len(categoryName) > 0 {
-			if categoryName != category.Name {
-				continue
-			}
-		}
-		for _, p := range category.Plugins {
-			desc := p.Desc
-			if len(desc) == 0 {
-				desc = "-"
-			} else if len(desc) > 100 {
-				desc = desc[:100] + "..."
-			}
-			data = append(data, []string{category.Name + "/" + p.Filename, p.Version, p.Author, desc})
-		}
+	defer manager.Close()
+	//categoryName := cmd.Args().First()
+	available, err := manager.Available()
+	if err != nil {
+		return err
 	}
 
-	_ = pterm.DefaultTable.
-		WithHasHeader().
-		WithSeparator("\t ").
-		WithData(data).Render()
-	pterm.Printf("Please use %s to install plugin\n", pterm.LightBlue("vfox add <plugin name>"))
+	pterm.Println(pterm.Bold.Sprint("AVAILABLE PLUGINS"))
+	pterm.Println()
+
+	maxNameLen := 0
+	for _, item := range available {
+		if len(item.Name) > maxNameLen {
+			maxNameLen = len(item.Name)
+		}
+	}
+	nameWidth := maxNameLen + 2
+
+	for _, item := range available {
+		isOfficial := strings.HasPrefix(item.Homepage, "https://github.com/version-fox/")
+
+		official := pterm.LightRed("✗")
+		if isOfficial {
+			official = pterm.LightGreen("✓")
+		}
+
+		nameCol := fmt.Sprintf("%-*s", nameWidth, item.Name)
+		pterm.Printf("  %s %s  %s\n", pterm.FgCyan.Sprint(nameCol), official, pterm.FgLightWhite.Sprint(item.Homepage))
+	}
+
+	pterm.Println()
+	pterm.Printf("  %s\n", pterm.FgGray.Sprint("Use 'vfox add <plugin>' to install"))
 	return nil
 
 }

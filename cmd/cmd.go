@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,13 +17,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
+
 	"github.com/version-fox/vfox/cmd/commands"
 	"github.com/version-fox/vfox/internal"
-	"github.com/version-fox/vfox/internal/logger"
+	"github.com/version-fox/vfox/internal/shared/logger"
 )
 
 func Execute(args []string) {
@@ -31,13 +33,13 @@ func Execute(args []string) {
 }
 
 type cmd struct {
-	app     *cli.App
+	app     *cli.Command
 	version string
 }
 
 func (c *cmd) Execute(args []string) {
-	if err := c.app.Run(args); err != nil {
-		fmt.Println(err)
+	if err := c.app.Run(context.Background(), args); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
@@ -48,31 +50,27 @@ func newCmd() *cmd {
 		Name:    "version",
 		Aliases: []string{"v", "V"},
 		Usage:   "print version",
-		Action: func(ctx *cli.Context, b bool) error {
+		Action: func(ctx context.Context, cmd *cli.Command, b bool) error {
 			println(version)
 			return nil
 		},
 	}
 
-	app := &cli.App{}
-	app.EnableBashCompletion = true
+	app := &cli.Command{}
+	app.EnableShellCompletion = true
 	app.Name = "vfox"
 	app.Usage = "vfox is a tool for runtime version management."
 	app.UsageText = "vfox [command] [command options]"
-	app.Copyright = "Copyright 2024 Han Li. All rights reserved."
+	app.Copyright = "Copyright 2026 Han Li. All rights reserved."
 	app.Version = version
 	app.Description = "vfox is a cross-platform version manager, extendable via plugins. It allows you to quickly install and switch between different environment you need via the command line."
 	app.Suggest = true
-	app.BashComplete = func(ctx *cli.Context) {
-		for _, command := range ctx.App.Commands {
-			_, _ = fmt.Fprintln(ctx.App.Writer, command.Name)
-		}
-	}
+	app.ShellComplete = completeCommand
 
 	debugFlags := &cli.BoolFlag{
 		Name:  "debug",
 		Usage: "show debug information",
-		Action: func(ctx *cli.Context, b bool) error {
+		Action: func(ctx context.Context, cmd *cli.Command, b bool) error {
 			logger.SetLevel(logger.DebugLevel)
 			return nil
 		},
@@ -86,15 +84,24 @@ func newCmd() *cmd {
 		commands.Install,
 		commands.Current,
 		commands.Use,
+		commands.Unuse,
 		commands.List,
 		commands.Uninstall,
 		commands.Available,
 		commands.Search,
 		commands.Update,
+		commands.Upgrade,
 		commands.Remove,
 		commands.Add,
+		commands.Plugin,
 		commands.Activate,
 		commands.Env,
+		commands.Config,
+		commands.Exec,
+		commands.Cd,
+	}
+	for _, command := range app.Commands {
+		command.ShellComplete = completeCommand
 	}
 
 	return &cmd{app: app, version: version}

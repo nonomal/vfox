@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,34 +17,38 @@
 package commands
 
 import (
+	"context"
 	"fmt"
-	"github.com/urfave/cli/v2"
-	"github.com/version-fox/vfox/internal"
-	"github.com/version-fox/vfox/internal/printer"
-	"golang.org/x/crypto/ssh/terminal"
 	"math"
 	"os"
 	"strings"
+
+	"github.com/urfave/cli/v3"
+	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/sdk"
+	"github.com/version-fox/vfox/internal/shared/printer"
+	"github.com/version-fox/vfox/internal/shared/util"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var Search = &cli.Command{
-	Name:   "search",
-	Usage:  "search a version of sdk",
-	Action: searchCmd,
+	Name:     "search",
+	Usage:    "Search a version of the target SDK",
+	Action:   searchCmd,
+	Category: CategorySDK,
 }
 
-func searchCmd(ctx *cli.Context) error {
-	sdkName := ctx.Args().First()
-	if sdkName == "" {
-		return cli.Exit("sdk name is required", 1)
+func RunSearch(sdkName string, availableArgs []string) error {
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
 	}
-	manager := internal.NewSdkManager()
 	defer manager.Close()
-	source, err := manager.LookupSdk(sdkName)
+	source, err := manager.LookupSdkWithInstall(sdkName, false)
 	if err != nil {
 		return fmt.Errorf("%s not supported, error: %w", sdkName, err)
 	}
-	result, err := source.Available()
+	result, err := source.Available(availableArgs)
 	if err != nil {
 		return fmt.Errorf("plugin [Available] method error: %w", err)
 	}
@@ -55,30 +59,49 @@ func searchCmd(ctx *cli.Context) error {
 	var options []*printer.KV
 	for _, p := range result {
 		var value string
-		if p.Main.Note != "" {
-			value = fmt.Sprintf("v%s (%s)", p.Main.Version, p.Main.Note)
+		if p.Note != "" {
+			value = fmt.Sprintf("%s (%s)", p.Version, p.Note)
 		} else {
-			value = fmt.Sprintf("v%s", p.Main.Version)
+			value = fmt.Sprintf("%s", p.Version)
 		}
 		if len(p.Additions) != 0 {
 			var additional []string
 			for _, a := range p.Additions {
-				additional = append(additional, fmt.Sprintf("%s v%s", a.Name, a.Version))
+				additional = append(additional, fmt.Sprintf("%s %s", a.Name, a.Version))
 			}
 			value = fmt.Sprintf("%s [%s]", value, strings.Join(additional, ","))
 		}
 		options = append(options, &printer.KV{
-			Key:   string(p.Main.Version),
+			Key:   string(p.Version),
 			Value: value,
 		})
 	}
 
+	installedVersions := util.NewSet[string]()
+	for _, version := range source.InstalledList() {
+		installedVersions.Add(string(version))
+	}
+
+	if util.IsNonInteractiveTerminal() {
+		fmt.Println("Available versions:")
+		for _, option := range options {
+			label := option.Value
+			if installedVersions.Contains(option.Key) {
+				label = fmt.Sprintf("%s (installed)", label)
+			}
+			fmt.Printf(" - %s\n", label)
+		}
+		return nil
+	}
+
 	_, height, _ := terminal.GetSize(int(os.Stdout.Fd()))
 	kvSelect := printer.PageKVSelect{
-		TopText: "Please select a version of " + sdkName,
-		Filter:  true,
-		Size:    int(math.Min(math.Max(float64(height-3), 1), 20)),
-		Options: options,
+		TopText:          "Please select a version of " + sdkName + " to install",
+		Filter:           true,
+		Size:             int(math.Min(math.Max(float64(height-3), 1), 20)),
+		HighlightOptions: installedVersions,
+		DisabledOptions:  installedVersions,
+		Options:          options,
 		SourceFunc: func(page, size int, options []*printer.KV) ([]*printer.KV, error) {
 			start := page * size
 			end := start + size
@@ -100,5 +123,13 @@ func searchCmd(ctx *cli.Context) error {
 	if version == nil {
 		return nil
 	}
-	return source.Install(internal.Version(version.Key))
+	return source.Install(sdk.Version(version.Key))
+}
+
+func searchCmd(ctx context.Context, cmd *cli.Command) error {
+	sdkName := cmd.Args().First()
+	if sdkName == "" {
+		return cli.Exit("sdk name is required", 1)
+	}
+	return RunSearch(sdkName, cmd.Args().Tail())
 }

@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -37,29 +37,29 @@ Due to a bug in PowerShell, we have to cleanup first when the shell open.
 #>
 & '{{.SelfPath}}' env --cleanup 2>$null | Out-Null;
 
-$__VFOX_PID=$pid;
-$originalPrompt = $function:prompt;
+$env:__VFOX_PID = $pid;
+$env:__VFOX_SHELL = 'pwsh';
+
 $OutputEncoding = [console]::InputEncoding = [console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;
 
-function prompt {
-    $export = &"{{.SelfPath}}" env -s pwsh;
-    if ($export) {
-		Invoke-Expression -Command $export;
-    }
-    &$originalPrompt;
-}
-
-<#
- There is a bug here. 
- When powershell is closed via the x button, this event will not be fired.
- See https://github.com/PowerShell/PowerShell/issues/8000
-#>
-Register-EngineEvent -SourceIdentifier PowerShell.Exiting -SupportEvent -Action {
-	&"{{.SelfPath}}" env --cleanup;
+if (-not $env:__VFOX_INITIALIZED) {
+	$env:__VFOX_INITIALIZED = '1';
+	$originalPrompt = $function:prompt;
+	function prompt {
+		$export = &"{{.SelfPath}}" env -s pwsh;
+		if ($export) {
+			Invoke-Expression -Command $export;
+		}
+		&$originalPrompt;	
+	}
+		
+	Register-EngineEvent -SourceIdentifier VfoxCleanup -Action {
+        &"{{.SelfPath}}" env --cleanup
+    } | Out-Null;
 }
 `
 
-func (sh pwsh) Activate() (string, error) {
+func (sh pwsh) Activate(config ActivateConfig) (string, error) {
 	return hook, nil
 }
 

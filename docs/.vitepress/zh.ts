@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@ function nav(): DefaultTheme.NavItem[] {
         {text: '首页', link: '/zh-hans/'},
         {text: '文档', link: '/zh-hans/guides/intro'},
         {text: '常见问题', link: '/zh-hans/guides/faq'},
-        {text: '插件仓库', link: 'https://github.com/version-fox/version-fox-plugins'}
+        {text: '插件列表', link: '/zh-hans/plugins/available'}
     ]
 }
 
@@ -59,6 +59,8 @@ function sidebar(): DefaultTheme.Sidebar {
                 {text: '什么是vfox?', link: '/zh-hans/guides/intro'},
                 {text: '快速入门', link: '/zh-hans/guides/quick-start'},
                 {text: '配置', link: '/zh-hans/guides/configuration'},
+                {text: '多用户共享', link: '/zh-hans/guides/multi-user-sharing'},
+                {text: '卸载', link: '/zh-hans/guides/uninstallation'},
                 {text: '常见问题', link: '/zh-hans/guides/faq'},
             ]
         },
@@ -66,6 +68,7 @@ function sidebar(): DefaultTheme.Sidebar {
             text: '用法',
             items: [
                 {text: '核心', link: '/zh-hans/usage/core-commands'},
+                {text: '插件', link: '/zh-hans/usage/plugins-commands'},
                 {text: '所有命令', link: '/zh-hans/usage/all-commands'},
             ]
         },
@@ -76,7 +79,9 @@ function sidebar(): DefaultTheme.Sidebar {
                     text: '成为作者',
                     items:[
                         {text: '创建插件', link: '/zh-hans/plugins/create/howto'},
-                        {text: '插件模板', link: 'https://github.com/version-fox/vfox/blob/main/template.lua'},
+                        {text: '测试与调试', link: '/zh-hans/plugins/create/testing'},
+                        {text: '如何提交到索引仓库?', link: '/zh-hans/plugins/create/howto_registry'},
+                        {text: '插件模板', link: 'https://github.com/version-fox/vfox-plugin-template'},
                     ]
                 }, 
                 {
@@ -85,16 +90,18 @@ function sidebar(): DefaultTheme.Sidebar {
                         {text: 'http', link: '/zh-hans/plugins/library/http'},
                         {text: 'html', link: '/zh-hans/plugins/library/html'},
                         {text: 'json', link: '/zh-hans/plugins/library/json'},
+                        {text: 'strings', link: '/zh-hans/plugins/library/strings'},
+                        {text: 'archiver', link: '/zh-hans/plugins/library/archiver'},
+                        {text: 'fs', link: '/zh-hans/plugins/library/fs'},
                     ]
                 }, 
 
-                {text: '可用插件', link: 'https://github.com/version-fox/version-fox-plugins'},
+                {text: '可用插件', link: '/zh-hans/plugins/available'},
             ]
         },
         {
             text: '其他',
             items: [
-                {text: '与asdf-vm对比', link: '/zh-hans/misc/vs-asdf'},
             ]
         },
     ]

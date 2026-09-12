@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,13 +17,17 @@
 package commands
 
 import (
-	"github.com/urfave/cli/v2"
+	"context"
+	"fmt"
+
+	"github.com/pterm/pterm"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal"
 )
 
 var Add = &cli.Command{
 	Name:  "add",
-	Usage: "add a plugin of sdk",
+	Usage: "Add a plugin or plugins",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "source",
@@ -35,14 +39,37 @@ var Add = &cli.Command{
 			Usage: "plugin alias",
 		},
 	},
-	Action: addCmd,
+	Action:   addCmd,
+	Category: CategoryPlugin,
 }
 
-func addCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManagerWithSource()
+// addCmd is the command to add a plugin of sdk
+func addCmd(ctx context.Context, cmd *cli.Command) error {
+	args := cmd.Args()
+
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
+	}
 	defer manager.Close()
-	sdkName := ctx.Args().First()
-	source := ctx.String("source")
-	alias := ctx.String("alias")
-	return manager.Add(sdkName, source, alias)
+
+	// multiple plugins
+	if args.Len() > 1 {
+		for index, sdkName := range args.Slice() {
+			pterm.Printf("[%s/%d]: Adding %s plugin...\n", pterm.Green(index+1), args.Len(), pterm.Green(sdkName))
+			if err := manager.Add(sdkName, "", ""); err != nil {
+				pterm.Println(fmt.Sprintf("Add plugin(%s) failed: %s", pterm.Red(sdkName), err.Error()))
+			}
+		}
+		return nil
+	} else {
+		sdkName := args.First()
+		source := cmd.String("source")
+		alias := cmd.String("alias")
+		err := manager.Add(sdkName, source, alias)
+		if err == nil {
+			pterm.Printf("Please use `%s` to install the version you need.\n", pterm.LightBlue(fmt.Sprintf("vfox install %s@<version>", sdkName)))
+		}
+		return err
+	}
 }

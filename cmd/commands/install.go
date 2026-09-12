@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,44 +17,291 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/urfave/cli/v2"
-	"github.com/version-fox/vfox/internal"
+	"os"
 	"strings"
+
+	"github.com/pterm/pterm"
+	"github.com/urfave/cli/v3"
+	"github.com/version-fox/vfox/internal"
+	"github.com/version-fox/vfox/internal/env"
+	"github.com/version-fox/vfox/internal/sdk"
+	"github.com/version-fox/vfox/internal/shared/logger"
+	"github.com/version-fox/vfox/internal/shared/util"
 )
 
 var Install = &cli.Command{
 	Name:    "install",
 	Aliases: []string{"i"},
-	Usage:   "install a version of sdk",
-	Action:  installCmd,
+	Usage:   "Install a version of the target SDK",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    "all",
+			Aliases: []string{"a"},
+			Usage:   "Install all SDK versions recorded in .vfox.toml",
+		},
+		&cli.BoolFlag{
+			Name:    "yes",
+			Aliases: []string{"y"},
+			Usage:   "Quick installation, skip interactive prompts",
+		},
+	},
+	Action:   installCmd,
+	Category: CategorySDK,
 }
 
-func installCmd(ctx *cli.Context) error {
-	sdkArg := ctx.Args().First()
-	if sdkArg == "" {
+func installCmd(ctx context.Context, cmd *cli.Command) error {
+	yes := cmd.Bool("yes")
+
+	if cmd.Bool("all") {
+		return installAll(yes)
+	}
+
+	args := cmd.Args()
+	if args.First() == "" {
 		return cli.Exit("sdk name is required", 1)
 	}
-	argArr := strings.Split(sdkArg, "@")
-	argsLen := len(argArr)
-	manager := internal.NewSdkManager()
+
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return nil
+	}
 	defer manager.Close()
-	if argsLen > 2 {
-		return cli.Exit("sdk version is invalid", 1)
-	} else {
-		var name string
-		var version internal.Version
-		if argsLen == 2 {
-			name = strings.ToLower(argArr[0])
-			version = internal.Version(argArr[1])
+
+	errorStore := util.NewErrorStore()
+
+	for i := 0; i < args.Len(); i++ {
+		sdkArg := args.Get(i)
+		argArr := strings.Split(sdkArg, "@")
+		argsLen := len(argArr)
+
+		if argsLen > 2 {
+			errorStore.AddAndShow(sdkArg, fmt.Errorf("your input is invalid: %s", sdkArg))
 		} else {
-			name = strings.ToLower(argArr[0])
-			version = ""
+			var name string
+			var version sdk.Version
+			if argsLen == 2 {
+				name = strings.ToLower(argArr[0])
+				// Remove 'v' prefix if present (e.g., "v20.0.0" -> "20.0.0")
+				version = sdk.Version(strings.TrimPrefix(argArr[1], "v"))
+			} else {
+				name = strings.ToLower(argArr[0])
+				version = ""
+			}
+
+			sdkSource, err := manager.LookupSdkWithInstall(name, yes)
+
+			if err != nil {
+				errorStore.AddAndShow(name, err)
+				continue
+			}
+			sdkMetadata := sdkSource.Metadata()
+
+			// Handle @latest tag
+			if version == "latest" {
+				availableVersions, err := sdkSource.Available([]string{})
+				if err != nil {
+					errorStore.AddAndShow(name, fmt.Errorf("failed to get available versions: %w", err))
+					continue
+				}
+				if len(availableVersions) == 0 {
+					errorStore.AddAndShow(name, fmt.Errorf("no available versions"))
+					continue
+				}
+				// Use the first available version (should be the latest)
+				latestVersion := availableVersions[0].Version
+				pterm.Printf("Using latest version: %s\n", pterm.LightGreen(latestVersion))
+				version = latestVersion
+			}
+
+			var resolvedVersion = manager.ResolveVersion(sdkMetadata.Name, version)
+			logger.Debugf("resolved version: %s\n", resolvedVersion)
+			if resolvedVersion == "" {
+				if util.IsNonInteractiveTerminal() {
+					return cli.Exit(fmt.Sprintf("install requires specifying a version for %s", name), 1)
+				}
+				showAvailable, _ := pterm.DefaultInteractiveConfirm.Show(fmt.Sprintf("No %s version provided, do you want to select a version to install?", pterm.Red(name)))
+				if showAvailable {
+					err := RunSearch(name, []string{})
+					if err != nil {
+						errorStore.AddAndShow(name, err)
+					}
+					continue
+				}
+			} else {
+				if err = sdkSource.Install(resolvedVersion); err != nil {
+					errorStore.AddAndShow(name, err)
+					continue
+				}
+			}
 		}
-		source, err := manager.LookupSdk(name)
+	}
+
+	notes := errorStore.GetNotesSet()
+
+	if notes.Len() == 1 {
+		return fmt.Errorf("failed to install %s", notes.Slice()[0])
+	} else if notes.Len() > 1 {
+		return fmt.Errorf("failed to install some SDKs: %s", strings.Join(notes.Slice(), ", "))
+	}
+
+	return nil
+}
+
+func installAll(autoConfirm bool) error {
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return nil
+	}
+	defer manager.Close()
+
+	plugins, sdks, err := notInstalled(manager)
+	if err != nil {
+		return err
+	}
+	if len(plugins) == 0 && len(sdks) == 0 {
+		fmt.Println("All plugins and SDKs are already installed")
+		return nil
+	}
+
+	fmt.Println("Install the following plugins and SDKs:")
+	printPlugin(plugins, nil)
+	printSdk(sdks, nil)
+
+	if !autoConfirm {
+		if util.IsNonInteractiveTerminal() {
+			return cli.Exit("Use the -y flag to automatically confirm installation in non-interactive environments", 1)
+		}
+		result, _ := pterm.DefaultInteractiveConfirm.
+			WithDefaultValue(true).
+			Show("Do you want to install these plugins and SDKs?")
+		if !result {
+			return nil
+		}
+	}
+
+	var (
+		count         = len(plugins) + len(sdks)
+		index         = 0
+		errorStr      string
+		stdout        = os.Stdout
+		stderr        = os.Stderr
+		pluginsResult = make(map[string]bool)
+		sdksResult    = make(map[string]bool)
+	)
+	os.Stdout = nil
+	os.Stderr = nil
+	pterm.SetDefaultOutput(os.Stdout)
+
+	spinnerInfo, _ := pterm.DefaultSpinner.
+		WithSequence([]string{"⣾ ", "⣽ ", "⣻ ", "⢿ ", "⡿ ", "⣟ ", "⣯ ", "⣷ "}...).
+		WithText("Installing...").
+		WithWriter(stdout).
+		Start()
+	for _, plugin := range plugins {
+		index++
+		spinnerInfo.UpdateText(fmt.Sprintf("[%v/%v] %s: %s installing...\033[K", index, count, "Plugin", plugin))
+		pluginsResult[plugin] = false
+		if err := manager.Add(plugin, "", ""); err != nil {
+			if errors.Is(err, internal.ManifestNotFound) {
+				errorStr = fmt.Sprintf("%s\n[%s] not found in remote registry, please check the name", errorStr, plugin)
+			} else {
+				errorStr = fmt.Sprintf("%s\n%s", errorStr, err)
+			}
+			continue
+		}
+		pluginsResult[plugin] = true
+	}
+	for sdkName, version := range sdks {
+		index++
+		spinnerInfo.UpdateText(fmt.Sprintf("[%v/%v] %s: %s@%s installing...\033[K", index, count, "SDK", sdkName, version))
+		sdkVersion := fmt.Sprintf("%s@%s", sdkName, version)
+		sdksResult[sdkVersion] = false
+		lookupSdk, err := manager.LookupSdk(sdkName)
 		if err != nil {
-			return fmt.Errorf("%s not supported, error: %w", name, err)
+			errorStr = fmt.Sprintf("%s\n%s", errorStr, err)
+			continue
 		}
-		return source.Install(version)
+		err = lookupSdk.Install(sdk.Version(version))
+		if err != nil {
+			errorStr = fmt.Sprintf("%s\n%s", errorStr, err)
+			continue
+		}
+		sdksResult[sdkVersion] = true
+	}
+	spinnerInfo.UpdateText(fmt.Sprintf("[%v/%v] Installation completed.\033[K", count, count))
+	_ = spinnerInfo.Stop()
+	os.Stdout = stdout
+	os.Stderr = stderr
+	pterm.SetDefaultOutput(os.Stdout)
+
+	fmt.Printf("%s indicates successful installation, while %s indicates installation failure.\n", pterm.Green("Green"), pterm.Red("red"))
+	printPlugin(plugins, pluginsResult)
+	printSdk(sdks, sdksResult)
+
+	if len(errorStr) > 0 {
+		fmt.Println(errorStr)
+	}
+	return nil
+}
+
+func notInstalled(manager *internal.Manager) (plugins []string, sdks map[string]string, err error) {
+	envContext := manager.RuntimeEnvContext
+
+	// Load configs from all scopes with priority: Global < Session < Project
+	chain, err := envContext.LoadVfoxTomlChainByScopes(env.Global, env.Session, env.Project)
+	if err != nil {
+		return
+	}
+
+	// Get all tools from the chain
+	allTools := chain.GetAllTools()
+	sdks = make(map[string]string)
+
+	for name, version := range allTools {
+		lookupSdk, err := manager.LookupSdk(name)
+		if err != nil {
+			// Plugin not installed
+			plugins = append(plugins, name)
+		} else if !lookupSdk.CheckRuntimeExist(sdk.Version(version)) {
+			// SDK not installed
+			sdks[name] = version
+		}
+	}
+	return
+}
+
+func printPlugin(plugins []string, result map[string]bool) {
+	if len(plugins) > 0 {
+		fmt.Println("Plugin:")
+		for _, plugin := range plugins {
+			if result != nil {
+				if result[plugin] {
+					plugin = pterm.Green(plugin)
+				} else {
+					plugin = pterm.Red(plugin)
+				}
+			}
+
+			fmt.Printf("  %s\n", plugin)
+		}
+	}
+}
+
+func printSdk(sdks map[string]string, result map[string]bool) {
+	fmt.Println("SDK:")
+	for sdk, version := range sdks {
+		sdkVersion := fmt.Sprintf("%s@%s", sdk, version)
+		if result != nil {
+			if result[sdkVersion] {
+				sdkVersion = pterm.Green(sdkVersion)
+			} else {
+				sdkVersion = pterm.Red(sdkVersion)
+			}
+		}
+
+		fmt.Printf("  %s\n", sdkVersion)
 	}
 }

@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,30 +17,38 @@
 package commands
 
 import (
+	"context"
 	"fmt"
+
 	"github.com/pterm/pterm"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal"
 )
 
 var Current = &cli.Command{
 	Name:      "current",
 	Aliases:   []string{"c"},
-	Usage:     "show current version of the targeted sdk",
-	UsageText: "show current version of all SDK's if no parameters are passed",
+	Usage:     "Show current version of the target SDK",
+	UsageText: "Show current version of all SDK's if no parameters are passed",
 	Action:    currentCmd,
+	Category:  CategorySDK,
 }
 
-func currentCmd(ctx *cli.Context) error {
-	manager := internal.NewSdkManager(internal.GlobalRecordSource, internal.SessionRecordSource, internal.ProjectRecordSource)
+func currentCmd(ctx context.Context, cmd *cli.Command) error {
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
+	}
 	defer manager.Close()
-	sdkName := ctx.Args().First()
+	sdkName := cmd.Args().First()
 	if sdkName == "" {
 		allSdk, err := manager.LoadAllSdk()
 		if err != nil {
 			return err
 		}
-		for name, s := range allSdk {
+
+		for _, s := range allSdk {
+			name := s.Metadata().Name
 			current := s.Current()
 			if current == "" {
 				pterm.Printf("%s -> N/A \n", name)
@@ -48,6 +56,7 @@ func currentCmd(ctx *cli.Context) error {
 				pterm.Printf("%s -> %s\n", name, pterm.LightGreen("v"+string(current)))
 			}
 		}
+
 		return nil
 	}
 	source, err := manager.LookupSdk(sdkName)

@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -17,23 +17,61 @@
 package commands
 
 import (
-	"github.com/urfave/cli/v2"
+	"context"
+	"fmt"
+
+	"github.com/pterm/pterm"
+	"github.com/urfave/cli/v3"
 	"github.com/version-fox/vfox/internal"
 )
 
+const allFlag = "all"
+
 var Update = &cli.Command{
-	Name:   "update",
-	Usage:  "update specified plug-ins",
-	Action: updateCmd,
+	Name:  "update",
+	Usage: "Update specified plugin, use --all/-a to update all installed plugins",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name:    allFlag,
+			Aliases: []string{"a"},
+			Usage:   "all plugins flag",
+		},
+	},
+	Action:   updateCmd,
+	Category: CategoryPlugin,
 }
 
-func updateCmd(ctx *cli.Context) error {
-	args := ctx.Args()
-	l := args.Len()
-	if l < 1 {
-		return cli.Exit("invalid arguments", 1)
+func updateCmd(ctx context.Context, cmd *cli.Command) error {
+	manager, err := internal.NewSdkManager()
+	if err != nil {
+		return err
 	}
-	manager := internal.NewSdkManager()
 	defer manager.Close()
-	return manager.Update(args.First())
+	if cmd.Bool(allFlag) {
+		if sdks, err := manager.LoadAllSdk(); err == nil {
+			var (
+				index int
+				total = len(sdks)
+			)
+			for _, s := range sdks {
+				sdkName := s.Metadata().Name
+				index++
+				pterm.Printf("[%s/%d]: Updating %s plugin...\n", pterm.Green(index), total, pterm.Green(sdkName))
+				if err = manager.Update(sdkName); err != nil {
+					pterm.Println(fmt.Sprintf("Update plugin(%s) failed, %s", sdkName, err.Error()))
+				}
+			}
+		} else {
+			return cli.Exit(err.Error(), 1)
+		}
+	} else {
+		args := cmd.Args()
+		l := args.Len()
+		if l < 1 {
+			return cli.Exit("invalid arguments", 1)
+		}
+
+		return manager.Update(args.First())
+	}
+	return nil
 }

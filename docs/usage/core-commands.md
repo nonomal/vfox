@@ -1,57 +1,5 @@
 # Core
 
-`vfox` has a few core commands that are used frequently. The following are the most frequently used commands.
-
-## Available
-
-View all available plugins. If you specify a category, it will only show the plugins in that category. If you don't
-specify a category, it will show all available plugins.
-
-**Usage**
-
-```shell
-vfox available [<category>]
-```
-
-`category`[optional]: Category, such as java, nodejs, flutter, etc. If not passed, all available plugins will be
-displayed.
-
-::: warning
-Note that the plugin name consists of two parts, `category/plugin-name`, such as `nodejs/nodejs`, `java/graalvm`
-:::
-
-## Add
-
-Add a plugin from the official repository or a custom source. In `vfox`, a plugin is an SDK, and an SDK is a plugin.
-Therefore, before using them, you need to install the corresponding plugin.
-
-**Usage**
-
-```shell
-vfox add [options] <plugin-name>
-```
-
-`plugin-name`: Plugin name, such as `nodejs/nodejs`.
-
-**Options**
-
-- `-a, --alias`: Set the plugin alias.
-- `-s, --source`: Install the plugin from the specified path (can be a remote file or a local file).
-
-**Examples**
-
-**Install plugin from the official repository**
-
-```shell
-$ vfox add --alias node nodejs/nodejs
-```
-
-**Install custom plugin**
-
-```shell
-$ vfox add --source https://raw.githubusercontent.com/version-fox/version-fox-plugins/main/nodejs/nodejs.lua custom-node
-```
-
 ## Search
 
 View for all available versions of the specified SDK.
@@ -59,13 +7,29 @@ View for all available versions of the specified SDK.
 **Usage**
 
 ```shell
-vfox search <sdk-name>
+vfox search <sdk-name> [...optionArgs]
 ```
 
 `sdk-name`: SDK name, such as `nodejs`, `custom-node`.
+`optionArgs`: Additional arguments for the search command. NOTE: Whether it is supported or not depends on the plugin.
+
+::: warning Cache
+
+`vfox` will cache the results of the `search` command to reduce the number of network requests. The default cache time is `12h`.
+
+You can disable it through the following command.
+```shell
+vfox config cache.availableHookDuration 0
+```
+For details, see [Cache Settings](../guides/configuration.md#cache-settings).
+:::
 
 ::: tip Quick install
 Select the target version, and press Enter to install quickly.
+:::
+
+::: tip
+`search` command will retrieve the plugin from the remote repository and add it locally if it is not installed locally.
 :::
 
 ## Install
@@ -83,6 +47,30 @@ vfox i <sdk-name>@<version>
 `sdk-name`: SDK name
 
 `version`: The version to install
+
+**Options**
+
+- `-a, --all`: Install all SDK versions recorded in .vfox.toml
+- `-y, --yes`: Quick installation, skip interactive prompts​
+
+::: tip
+You can install multiple SDKs at the same time by separating them with space.
+
+```shell
+vfox install nodejs@20 golang ...
+```
+
+:::
+
+::: tip
+Quick installation, skip interactive prompts​​
+
+```shell
+vfox install --yes nodejs@20
+vfox install --yes --all
+```
+
+:::
 
 ## Use
 
@@ -113,6 +101,35 @@ vfox u [options] <sdk-name>[@<version>]
 `Unix-like`: `Session` scope
 :::
 
+## Unuse
+
+Unset the runtime version from a specific scope.
+
+**Usage**
+
+```shell
+vfox unuse [options] <sdk-name>
+```
+
+`sdk-name`: SDK name
+
+**Options**
+
+- `-g, --global`: Remove from global scope
+- `-p, --project`: Remove from project scope (current directory)
+- `-s, --session`: Remove from session scope (current Shell session)
+
+::: tip Default scope
+
+`Windows`: `Global` scope
+
+`Unix-like`: `Session` scope
+:::
+
+::: warning Effect
+After using `unuse`, the SDK will no longer be active in the specified scope. If the SDK is configured in other scopes, those will take precedence according to vfox's scope hierarchy (Project > Session > Global).
+:::
+
 ## Uninstall
 
 Uninstall the specified version of the SDK.
@@ -127,3 +144,146 @@ vfox un <sdk-name>@<version>
 `sdk-name`: SDK name
 
 `version`: The specific version number
+
+## List
+
+View all installed sdks.
+
+**Usage**
+
+```shell
+vfox list [<sdk-name>]
+
+vfox ls [<sdk-name>]
+```
+
+`sdk-name`: SDK name, if not passed, display all.
+
+## Current
+
+View the current version of the SDK.
+
+**Usage**
+
+```shell
+vfox current [<sdk-name>]
+vfox c
+```
+
+## Cd 
+
+Launch a shell in the `VFOX_HOME` or SDK directory.
+
+**Usage**
+
+```shell
+vfox cd [options] [<sdk-name>]
+```
+
+`sdk-name`: SDK name, if not passed, default `VFOX_HOME`.
+
+**Options**
+
+- `-p, --plugin`: Launch a shell in the plugin directory.
+
+## Upgrade
+
+Upgrade `vfox` to the latest version.
+
+**Usage**
+
+```shell
+vfox upgrade
+```
+
+## Exec <Badge type="tip" text=">= 1.0.0" vertical="middle" />
+
+Execute a command in a vfox managed environment.
+
+**Usage**
+
+```shell
+vfox exec <sdk-name>[@<version>]... -- <command> [args...]
+
+vfox x <sdk-name>[@<version>]... -- <command> [args...]
+```
+
+`sdk-name`: SDK name
+
+`version`[optional]: Specify the version to use. If not provided, uses the version configured in the current scope.
+
+You can specify multiple SDKs before `--`. They are merged from left to right, and the leftmost SDK has higher priority when PATH or environment variables overlap.
+
+`command`: The command to execute
+
+`args`: Arguments to pass to the command
+
+**Description**
+
+The `exec` command allows you to temporarily execute commands in a specified SDK environment without modifying your current scope configuration. This is particularly useful for:
+
+- **IDE Integration**: Use project-specific SDK versions in IDEs like VS Code
+- **Script Execution**: Use specific SDK versions in CI/CD or build scripts
+- **Temporary Testing**: Test code with different SDK versions
+
+::: tip Non-Interactive Environments
+
+For Docker, CI/CD, and other non-interactive shells, prefer `vfox exec` instead of relying on `vfox activate`.
+
+`activate` integrates vfox through shell hooks, while `exec` prepares the SDK environment explicitly for the subprocess you are running.
+
+```shell
+vfox exec nodejs@24.14.0 -- npm install -g pnpm
+vfox exec nodejs@24.14.0 -- bash -lc 'node -v && npm -v'
+```
+
+:::
+
+**Examples**
+
+```shell
+# Execute command with specified version
+vfox exec nodejs@20.9.0 -- node -v
+
+# Execute command with multiple SDKs
+vfox exec nodejs@24.14.0 golang@1.25.6 -- npm install -g @qwen-code/qwen-code@latest
+
+# Run build in maven environment
+vfox exec maven@3.9.1 -- mvn clean install
+
+# Use alias x (short for exec)
+vfox x maven@3.9.1 -- mvn clean
+
+```
+
+::: tip IDE Integration
+
+In VS Code, you can use the `exec` command to ensure your project uses the correct SDK version. For example, configure in `.vscode/tasks.json`:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run with Node.js",
+      "type": "shell",
+      "command": "vfox",
+      "args": ["x", "nodejs@20", "--", "node", "${file}"]
+    }
+  ]
+}
+```
+
+:::
+
+::: tip Auto Install
+
+If the specified version is not installed, `exec` will automatically install it.
+
+:::
+
+::: warning Environment Variables
+
+The `exec` command sets the correct environment variables (such as PATH, JAVA_HOME, etc.) in a subprocess, but does not affect your current Shell session.
+
+:::

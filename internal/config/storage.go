@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -42,11 +42,11 @@ func (s *Storage) Validate() error {
 		return fmt.Errorf("%s is not a directory", s.SdkPath)
 	}
 	tmpfn := filepath.Join(s.SdkPath, ".tmpfile")
-	f, err := os.OpenFile(tmpfn, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0666)
+	f, err := os.OpenFile(tmpfn, os.O_WRONLY|os.O_CREATE, os.ModePerm)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpfn)
 	defer f.Close()
+	defer os.Remove(tmpfn)
 	return nil
 }

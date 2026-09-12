@@ -1,10 +1,46 @@
 # Configuration
 
-`vfox` allows you to change some configurations, all configuration is stored in the `$HOME/.version-fox/config.yaml` file.
+`vfox` allows you to change some configurations, all configuration is stored in the `$HOME/.version-fox/config.yaml`
+file.
 
 ::: tip
 If you use `vfox` for the first time, an empty `config.yaml` file will be created automatically.
 :::
+
+## Legacy Version File <Badge type="tip" text=">= 0.4.0" vertical="middle" />
+
+Plugins **with support** can read the versions files used by other version managers,
+for example, `.nvmrc` in the case of Nodejs's `nvm`.
+
+This capability is **turned on by default**. The related configuration options are as follows:
+
+```yaml
+legacyVersionFile:
+  enable: true
+  strategy: "specified" # Parsing strategy
+```
+
+- `enable`: Whether to enable legacy version file parsing functionality
+- `strategy`: Parsing strategy, see strategy options below for details
+
+### Strategy Options
+
+`vfox` supports the following three parsing strategies:
+
+- `latest_installed`: Use the latest installed version
+- `latest_available`: Use the latest available version
+- `specified`: Use the version specified in the legacy file (default)
+
+::: warning
+
+1. If both `.vfox.toml` and other version manager's configuration files (`.nvmrc`, `.sdkmanrc`, etc.) exist in the
+   directory, `vfox` **priority read** the `.vfox.toml` file.
+2. Enabling this feature may cause `vfox` to refresh environment variables slightly slower, **please enable it according
+   to your needs**.
+
+:::
+
+If you want to disable this feature, you can use the command: `vfox config legacyVersionFile.enable false`
 
 ## Proxy Settings
 
@@ -13,6 +49,7 @@ Currently only support http(s) proxy protocol
 :::
 
 **Format**: `http[s]://[username:password@]host:port`
+
 ```yaml
 proxy:
   enable: false
@@ -31,3 +68,89 @@ Before configuring, please make sure that `vfox` has write permission to the fol
 storage:
   sdkPath: /tmp
 ```
+
+`storage.sdkPath` is the root directory used to store SDKs. For example, if `sdkPath` is `/tmp`, Node.js will be installed under `/tmp/nodejs/`.
+
+::: warning Compatibility Note
+`v1.0.2` to `v1.0.7` incorrectly treated `storage.sdkPath` as a shared root and installed SDKs under `sdkPath/cache/<sdk>`.
+
+This behavior has been corrected to match `v0.10.x`. Existing SDKs under the incorrect `cache` path are still temporarily supported. New installs use the correct layout `sdkPath/<sdk>`.
+
+If both `sdkPath/<sdk>` and `sdkPath/cache/<sdk>` exist, `vfox` will prefer `sdkPath/<sdk>`.
+:::
+
+## Plugin Registry Address
+
+`vfox` will default to retrieve plugins from [plugins registry](https://version-fox.github.io/vfox-plugins).
+
+If you want to use **your own registry or third-party mirror registry**, please configure it following:
+
+```yaml
+registry:
+  address: "https://version-fox.github.io/vfox-plugins"
+```
+
+::: tip Available Mirrors
+
+- https://cdn.jsdelivr.net/gh/version-fox/vfox-plugins/plugins
+- https://rawcdn.githack.com/version-fox/vfox-plugins/plugins
+  :::
+
+## Cache Settings
+
+`vfox` will cache the results of the `search` command (`available` hook) by default to reduce the number of network requests. The default
+cache time is `12h`.
+
+::: warning Special Value
+
+- `-1`: Never expire
+- `0`: Do not cache
+  :::
+
+```yaml
+cache:
+  availableHookDuration: 12h # s second, m minute, h hour
+```
+
+::: tip Cache File Path
+`$HOME/.version-fox/plugins/<plugin-name>/available.cache`
+:::
+
+## Gitignore Settings <Badge type="tip" text=">= 1.0.12" vertical="middle" />
+
+When you run `vfox use <sdk>@<version> -p` (project scope), `vfox` creates a `.vfox/` directory at the project root and, by default, appends `.vfox/` to the project's existing `.gitignore` (it will not create a new `.gitignore` if one is absent).
+
+If you manage `.vfox/` through a [global gitignore](https://git-scm.com/docs/gitignore) (`core.excludesfile`) and prefer that `vfox` not touch the project's `.gitignore`, you can disable this behavior:
+
+```yaml
+gitignore:
+  enable: true # set to false to disable auto-updating .gitignore
+```
+
+To disable via command:
+
+```shell
+vfox config gitignore.enable false
+```
+
+## Config Command
+
+Setup, view config
+
+**Usage**
+
+```shell
+vfox config [<key>] [<value>]
+
+vfox config proxy.enable true
+vfox config proxy.url http://localhost:7890
+vfox config storage.sdkPath /tmp
+```
+
+`key`: Configuration item, separated by `. `.
+`value`: If not passed, look at the value of the configuration item.
+
+**Options**
+
+- `-l, --list`: list all config.
+- `-un, --unset`: remove a config.

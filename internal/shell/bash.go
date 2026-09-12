@@ -1,5 +1,5 @@
 /*
- *    Copyright 2024 Han Li and contributors
+ *    Copyright 2026 Han Li and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -27,10 +27,17 @@ const bashHook = `
 {{.EnvContent}}
 
 export __VFOX_PID=$$;
+export __VFOX_SHELL='bash';
 
 _vfox_hook() {
   local previous_exit_status=$?;
   trap -- '' SIGINT;
+  {{if .EnablePidCheck}}
+  # Check if PID changed (e.g., in tmux new pane)
+  if [[ "$$" != "$__VFOX_PID" ]]; then
+    export __VFOX_PID=$$;
+  fi
+  {{end}}
   eval "$("{{.SelfPath}}" env -s bash)";
   trap - SIGINT;
   return $previous_exit_status;
@@ -50,7 +57,7 @@ type bash struct{}
 
 var Bash = bash{}
 
-func (b bash) Activate() (string, error) {
+func (b bash) Activate(config ActivateConfig) (string, error) {
 	return bashHook, nil
 }
 
@@ -66,6 +73,10 @@ func (b bash) Export(envs env.Vars) (out string) {
 }
 
 func (b bash) export(key, value string) string {
+	// Use double quotes for PATH-like variables to avoid unnecessary ANSI-C quoting
+	if key == "PATH" {
+		return fmt.Sprintf("export %s=\"%s\";", key, value)
+	}
 	return "export " + b.escape(key) + "=" + b.escape(value) + ";"
 }
 
